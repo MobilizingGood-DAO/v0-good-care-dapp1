@@ -17,8 +17,8 @@ export const AVACLOUD_CONFIG = {
 // GCT Token contract address
 export const GCT_TOKEN_ADDRESS = "0x10acd62bdfa7028b0A96710a9f6406446D2b1164"
 
-// CARE Daily Reflections NFT contract address - UPDATED
-export const REFLECTIONS_CONTRACT_ADDRESS = "0x141b77a109011475A4c347fD19Dd4ead79AE912F"
+// Reflections NFT contract address
+export const REFLECTIONS_CONTRACT_ADDRESS = "0x5fb4048031364A47c320236312fF66CB42ae822F"
 
 // Helper function to add the GOOD CARE Network to MetaMask or other wallets
 export async function addGoodCareNetworkToWallet() {
