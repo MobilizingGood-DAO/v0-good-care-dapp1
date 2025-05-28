@@ -5,12 +5,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { useToast } from "@/components/ui/use-toast"
-import { Calendar, CheckCircle, Star, Heart, Coins, Loader2 } from "lucide-react"
-import { useWallet } from "@/providers/wallet-provider"
+import { Calendar, CheckCircle, Star, Heart, Coins, Loader2, ExternalLink } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { mintReflectionNFT, estimateGasCostInCARE } from "@/lib/reflection-minting"
-import { ethers } from "ethers"
+import { useWallet } from "@/providers/wallet-provider"
+import { useContract, useAddress, useClaimNFT, useOwnedNFTs } from "@thirdweb-dev/react"
+import { useToast } from "@/hooks/use-toast"
+import {
+  createReflectionMetadata,
+  estimateGasCostInCARE,
+  checkSufficientBalance,
+  REFLECTION_NFT_CONTRACT,
+} from "@/lib/reflection-minting"
 
 // Mood emojis and descriptions
 const MOODS = [
@@ -33,9 +38,17 @@ interface CheckInEntry {
   nftTxHash?: string
 }
 
-export function MoodCheckIn() {
-  const { address, isConnected, walletType } = useWallet()
+export function ThirdwebMoodCheckIn() {
+  const { address: walletAddress, isConnected, walletType } = useWallet()
+  const thirdwebAddress = useAddress()
   const { toast } = useToast()
+
+  // Thirdweb hooks
+  const { contract } = useContract(REFLECTION_NFT_CONTRACT, "nft-drop")
+  const { data: ownedNFTs, isLoading: isLoadingOwnedNFTs } = useOwnedNFTs(contract, thirdwebAddress)
+  const { mutateAsync: claimNFT, isLoading: isClaiming, error: claimError } = useClaimNFT(contract)
+
+  // Component state
   const [selectedMood, setSelectedMood] = useState<number | null>(null)
   const [reflection, setReflection] = useState("")
   const [checkInData, setCheckInData] = useState({
@@ -44,27 +57,31 @@ export function MoodCheckIn() {
     totalCheckIns: 0,
     entries: [] as CheckInEntry[],
   })
-  const [isLoading, setIsLoading] = useState(false)
   const [showMoodSelector, setShowMoodSelector] = useState(false)
-  const [gasCost, setGasCost] = useState<string>("0.001")
+  const [gasCost, setGasCost] = useState<string>("0.003")
   const [isEstimatingGas, setIsEstimatingGas] = useState(false)
   const [needsFunding, setNeedsFunding] = useState(false)
   const [isFunding, setIsFunding] = useState(false)
+  const [balanceInfo, setBalanceInfo] = useState({ balance: "0", required: "0.003" })
 
   // Load check-in data from localStorage
   useEffect(() => {
-    if (isConnected && address) {
+    if (isConnected && walletAddress) {
       loadCheckInData()
       checkWalletBalance()
     }
-  }, [isConnected, address])
+  }, [isConnected, walletAddress])
 
   // Load check-in data from all possible storage keys
   const loadCheckInData = () => {
-    if (!address) return
+    if (!walletAddress) return
 
     // Try different storage keys to ensure backward compatibility
-    const possibleKeys = [`checkIn_${address}`, `checkIn_${address.toLowerCase()}`, `checkIn_${address.toUpperCase()}`]
+    const possibleKeys = [
+      `checkIn_${walletAddress}`,
+      `checkIn_${walletAddress.toLowerCase()}`,
+      `checkIn_${walletAddress.toUpperCase()}`,
+    ]
 
     for (const key of possibleKeys) {
       const storedData = localStorage.getItem(key)
@@ -80,23 +97,17 @@ export function MoodCheckIn() {
       }
     }
 
-    console.log("No check-in data found for address:", address)
+    console.log("No check-in data found for address:", walletAddress)
   }
 
   // Check if wallet needs funding
   const checkWalletBalance = async () => {
-    if (!address || walletType !== "avacloud") return
+    if (!walletAddress) return
 
     try {
-      const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
-      const balance = await provider.getBalance(address)
-
-      // If balance is less than 0.01 CARE, wallet needs funding
-      if (balance < ethers.parseEther("0.01")) {
-        setNeedsFunding(true)
-      } else {
-        setNeedsFunding(false)
-      }
+      const balanceCheck = await checkSufficientBalance(walletAddress)
+      setBalanceInfo({ balance: balanceCheck.balance, required: balanceCheck.required })
+      setNeedsFunding(!balanceCheck.sufficient)
     } catch (error) {
       console.error("Error checking wallet balance:", error)
     }
@@ -104,7 +115,7 @@ export function MoodCheckIn() {
 
   // Request funds from faucet
   const requestFunds = async () => {
-    if (!address) return
+    if (!walletAddress) return
 
     setIsFunding(true)
     try {
@@ -113,7 +124,7 @@ export function MoodCheckIn() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ address: walletAddress }),
       })
 
       const data = await response.json()
@@ -122,7 +133,6 @@ export function MoodCheckIn() {
         toast({
           title: "Wallet funded!",
           description: `Your wallet has been funded with ${data.amount}`,
-          variant: "default",
         })
         setNeedsFunding(false)
 
@@ -179,9 +189,9 @@ export function MoodCheckIn() {
     setSelectedMood(mood)
   }
 
-  // Handle check-in
+  // Handle check-in with real NFT minting
   const handleCheckIn = async () => {
-    if (!isConnected) {
+    if (!isConnected || !thirdwebAddress) {
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet to check in",
@@ -208,20 +218,22 @@ export function MoodCheckIn() {
       return
     }
 
-    setIsLoading(true)
+    if (needsFunding) {
+      toast({
+        title: "Insufficient CARE balance",
+        description: "Please fund your wallet first to cover gas fees",
+        variant: "destructive",
+      })
+      return
+    }
 
     try {
       const today = getTodayString()
       const newCheckInNumber = checkInData.totalCheckIns + 1
       const newStreak = checkInData.streak + 1
 
-      // Mint NFT first
-      toast({
-        title: "Minting your reflection NFT...",
-        description: "Please confirm the transaction in your wallet",
-      })
-
-      const mintResult = await mintReflectionNFT(
+      // Create metadata for the NFT
+      const metadata = createReflectionMetadata(
         selectedMood,
         reflection.trim() || undefined,
         today,
@@ -229,23 +241,25 @@ export function MoodCheckIn() {
         newCheckInNumber,
       )
 
-      if (!mintResult.success) {
-        toast({
-          title: "NFT minting failed",
-          description: mintResult.error || "Failed to mint reflection NFT",
-          variant: "destructive",
-        })
-        return
-      }
+      toast({
+        title: "Minting your reflection NFT...",
+        description: "Please confirm the transaction in your wallet",
+      })
 
-      // Create new entry with NFT data
+      // Mint the NFT using Thirdweb
+      const tx = await claimNFT({
+        to: thirdwebAddress,
+        quantity: 1,
+      })
+
+      // Create new entry with real NFT data
       const newEntry: CheckInEntry = {
         date: today,
         mood: selectedMood,
         reflection: reflection.trim() || undefined,
         timestamp: Date.now(),
-        nftTokenId: mintResult.tokenId,
-        nftTxHash: mintResult.txHash,
+        nftTokenId: tx.id?.toString(),
+        nftTxHash: tx.receipt?.transactionHash,
       }
 
       const newEntries = [...checkInData.entries, newEntry]
@@ -260,30 +274,50 @@ export function MoodCheckIn() {
       setCheckInData(newCheckInData)
 
       // Save to localStorage with the exact address case
-      if (address) {
-        localStorage.setItem(`checkIn_${address}`, JSON.stringify(newCheckInData))
+      if (walletAddress) {
+        localStorage.setItem(`checkIn_${walletAddress}`, JSON.stringify(newCheckInData))
       }
 
       toast({
         title: "Check-in recorded & NFT minted! 🎉",
-        description: `Your reflection NFT #${mintResult.tokenId} has been minted successfully!`,
-        variant: "default",
+        description: (
+          <div className="flex flex-col gap-2">
+            <span>Your reflection NFT has been minted on-chain!</span>
+            {tx.receipt?.transactionHash && (
+              <a
+                href={`https://subnets.avax.network/goodcare/tx/${tx.receipt.transactionHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+              >
+                View on Explorer <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+        ),
       })
 
       setSelectedMood(null)
       setReflection("")
       setShowMoodSelector(false)
+
+      // Refresh balance after minting
+      setTimeout(() => {
+        checkWalletBalance()
+      }, 2000)
     } catch (error) {
       console.error("Check-in error:", error)
       toast({
         title: "Check-in failed",
-        description: "There was an error processing your check-in. Please try again.",
+        description:
+          error instanceof Error ? error.message : "There was an error processing your check-in. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
   }
+
+  // Calculate total NFTs owned (for display)
+  const totalOwnedNFTs = ownedNFTs?.length || 0
 
   return (
     <Card className="overflow-hidden">
@@ -305,8 +339,11 @@ export function MoodCheckIn() {
         {needsFunding && walletType === "avacloud" && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
             <h3 className="font-medium text-yellow-800 mb-2">Your wallet needs CARE tokens</h3>
+            <p className="text-sm text-yellow-700 mb-2">
+              Balance: {Number.parseFloat(balanceInfo.balance).toFixed(4)} CARE
+            </p>
             <p className="text-sm text-yellow-700 mb-3">
-              You need CARE tokens to pay for gas fees when minting reflection NFTs.
+              Required: {Number.parseFloat(balanceInfo.required).toFixed(4)} CARE for gas fees
             </p>
             <Button
               onClick={requestFunds}
@@ -385,7 +422,7 @@ export function MoodCheckIn() {
                     <span>Estimating...</span>
                   </div>
                 ) : (
-                  <span className="text-blue-700">{gasCost} CARE</span>
+                  <span className="text-blue-700">{Number.parseFloat(gasCost).toFixed(4)} CARE</span>
                 )}
               </div>
               <p className="text-xs text-blue-600 mt-1">
@@ -394,8 +431,8 @@ export function MoodCheckIn() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 pt-4">
-              <Button onClick={handleCheckIn} disabled={isLoading || selectedMood === null} className="flex-1">
-                {isLoading ? (
+              <Button onClick={handleCheckIn} disabled={isClaiming || selectedMood === null} className="flex-1">
+                {isClaiming ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Minting NFT...
@@ -412,7 +449,7 @@ export function MoodCheckIn() {
                   setReflection("")
                 }}
                 className="sm:w-auto"
-                disabled={isLoading}
+                disabled={isClaiming}
               >
                 Cancel
               </Button>
@@ -432,7 +469,7 @@ export function MoodCheckIn() {
             <span className="text-sm text-muted-foreground">Reflection NFTs</span>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span className="text-2xl font-bold">{checkInData.totalCheckIns}</span>
+              <span className="text-2xl font-bold">{totalOwnedNFTs}</span>
             </div>
           </div>
         </div>

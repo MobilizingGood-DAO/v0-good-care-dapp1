@@ -3,7 +3,6 @@
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { CHAIN_CONFIG, switchToGoodCareNetwork } from "@/lib/blockchain-config"
-import { createOrGetUserByEmail, createOrGetUserBySocial, createSession } from "@/lib/auth-service"
 
 // Define types for our context
 type WalletContextType = {
@@ -16,7 +15,7 @@ type WalletContextType = {
   connectWallet: () => Promise<void>
   disconnectWallet: () => void
   switchNetwork: () => Promise<boolean>
-  setAvaCloudWallet: (address: string, email?: string, socialProvider?: string, socialId?: string) => void
+  setAvaCloudWallet: (address: string) => void
 }
 
 // Create context with default values
@@ -121,12 +120,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Set AvaCloud wallet (called after successful registration/login)
-  const setAvaCloudWallet = async (
-    walletAddress: string,
-    email?: string,
-    socialProvider?: string,
-    socialId?: string,
-  ) => {
+  const setAvaCloudWallet = (walletAddress: string) => {
     setAddress(walletAddress)
     setIsConnected(true)
     setIsCorrectChain(true) // AvaCloud wallets are always on the correct chain
@@ -135,24 +129,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // Store in localStorage for persistence
     localStorage.setItem("avacloud_wallet_address", walletAddress)
     localStorage.setItem("wallet_type", "avacloud")
-
-    // Create or get user and session
-    try {
-      let user
-      if (email) {
-        user = await createOrGetUserByEmail(email, walletAddress)
-      } else if (socialProvider && socialId) {
-        user = await createOrGetUserBySocial(socialProvider, socialId, email, walletAddress)
-      }
-
-      if (user) {
-        const session = await createSession(user)
-        localStorage.setItem("auth_token", session.accessToken)
-      }
-    } catch (error) {
-      console.error("Error creating user session:", error)
-      // Don't fail wallet connection if auth fails
-    }
 
     // Update balance
     updateBalance(walletAddress)

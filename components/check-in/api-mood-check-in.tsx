@@ -5,12 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { useToast } from "@/components/ui/use-toast"
-import { Calendar, CheckCircle, Star, Heart, Coins, Loader2 } from "lucide-react"
-import { useWallet } from "@/providers/wallet-provider"
+import { Calendar, CheckCircle, Star, Heart, Loader2, ExternalLink, Zap } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { mintReflectionNFT, estimateGasCostInCARE } from "@/lib/reflection-minting"
-import { ethers } from "ethers"
+import { useWallet } from "@/providers/wallet-provider"
+import { useContract, useAddress, useOwnedNFTs } from "@thirdweb-dev/react"
+import { useToast } from "@/hooks/use-toast"
+import { mintReflectionViaAPI, REFLECTION_NFT_CONTRACT } from "@/lib/reflection-minting"
 
 // Mood emojis and descriptions
 const MOODS = [
@@ -33,9 +33,16 @@ interface CheckInEntry {
   nftTxHash?: string
 }
 
-export function MoodCheckIn() {
-  const { address, isConnected, walletType } = useWallet()
+export function APIMoodCheckIn() {
+  const { address: walletAddress, isConnected } = useWallet()
+  const thirdwebAddress = useAddress()
   const { toast } = useToast()
+
+  // Thirdweb hooks for displaying NFTs
+  const { contract } = useContract(REFLECTION_NFT_CONTRACT, "nft-drop")
+  const { data: ownedNFTs, isLoading: isLoadingOwnedNFTs } = useOwnedNFTs(contract, thirdwebAddress)
+
+  // Component state
   const [selectedMood, setSelectedMood] = useState<number | null>(null)
   const [reflection, setReflection] = useState("")
   const [checkInData, setCheckInData] = useState({
@@ -44,27 +51,26 @@ export function MoodCheckIn() {
     totalCheckIns: 0,
     entries: [] as CheckInEntry[],
   })
-  const [isLoading, setIsLoading] = useState(false)
   const [showMoodSelector, setShowMoodSelector] = useState(false)
-  const [gasCost, setGasCost] = useState<string>("0.001")
-  const [isEstimatingGas, setIsEstimatingGas] = useState(false)
-  const [needsFunding, setNeedsFunding] = useState(false)
-  const [isFunding, setIsFunding] = useState(false)
+  const [isMinting, setIsMinting] = useState(false)
 
   // Load check-in data from localStorage
   useEffect(() => {
-    if (isConnected && address) {
+    if (isConnected && walletAddress) {
       loadCheckInData()
-      checkWalletBalance()
     }
-  }, [isConnected, address])
+  }, [isConnected, walletAddress])
 
   // Load check-in data from all possible storage keys
   const loadCheckInData = () => {
-    if (!address) return
+    if (!walletAddress) return
 
     // Try different storage keys to ensure backward compatibility
-    const possibleKeys = [`checkIn_${address}`, `checkIn_${address.toLowerCase()}`, `checkIn_${address.toUpperCase()}`]
+    const possibleKeys = [
+      `checkIn_${walletAddress}`,
+      `checkIn_${walletAddress.toLowerCase()}`,
+      `checkIn_${walletAddress.toUpperCase()}`,
+    ]
 
     for (const key of possibleKeys) {
       const storedData = localStorage.getItem(key)
@@ -80,92 +86,7 @@ export function MoodCheckIn() {
       }
     }
 
-    console.log("No check-in data found for address:", address)
-  }
-
-  // Check if wallet needs funding
-  const checkWalletBalance = async () => {
-    if (!address || walletType !== "avacloud") return
-
-    try {
-      const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
-      const balance = await provider.getBalance(address)
-
-      // If balance is less than 0.01 CARE, wallet needs funding
-      if (balance < ethers.parseEther("0.01")) {
-        setNeedsFunding(true)
-      } else {
-        setNeedsFunding(false)
-      }
-    } catch (error) {
-      console.error("Error checking wallet balance:", error)
-    }
-  }
-
-  // Request funds from faucet
-  const requestFunds = async () => {
-    if (!address) return
-
-    setIsFunding(true)
-    try {
-      const response = await fetch("/api/faucet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ address }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        toast({
-          title: "Wallet funded!",
-          description: `Your wallet has been funded with ${data.amount}`,
-          variant: "default",
-        })
-        setNeedsFunding(false)
-
-        // Wait a moment for the transaction to be processed
-        setTimeout(() => {
-          checkWalletBalance()
-        }, 3000)
-      } else {
-        toast({
-          title: "Funding failed",
-          description: data.error || "Failed to fund wallet",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error funding wallet:", error)
-      toast({
-        title: "Funding failed",
-        description: "An error occurred while funding your wallet",
-        variant: "destructive",
-      })
-    } finally {
-      setIsFunding(false)
-    }
-  }
-
-  // Estimate gas cost when mood selector is shown
-  useEffect(() => {
-    if (showMoodSelector && isConnected) {
-      estimateGas()
-    }
-  }, [showMoodSelector, isConnected])
-
-  const estimateGas = async () => {
-    setIsEstimatingGas(true)
-    try {
-      const { gasCostInCARE } = await estimateGasCostInCARE()
-      setGasCost(gasCostInCARE)
-    } catch (error) {
-      console.error("Error estimating gas:", error)
-    } finally {
-      setIsEstimatingGas(false)
-    }
+    console.log("No check-in data found for address:", walletAddress)
   }
 
   // Check if user can check in today
@@ -179,9 +100,9 @@ export function MoodCheckIn() {
     setSelectedMood(mood)
   }
 
-  // Handle check-in
+  // Handle check-in with API-based NFT minting
   const handleCheckIn = async () => {
-    if (!isConnected) {
+    if (!isConnected || !walletAddress) {
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet to check in",
@@ -208,44 +129,33 @@ export function MoodCheckIn() {
       return
     }
 
-    setIsLoading(true)
+    setIsMinting(true)
 
     try {
       const today = getTodayString()
       const newCheckInNumber = checkInData.totalCheckIns + 1
       const newStreak = checkInData.streak + 1
 
-      // Mint NFT first
       toast({
         title: "Minting your reflection NFT...",
-        description: "Please confirm the transaction in your wallet",
+        description: "This may take a few moments. No gas fees required!",
       })
 
-      const mintResult = await mintReflectionNFT(
-        selectedMood,
-        reflection.trim() || undefined,
-        today,
-        newStreak,
-        newCheckInNumber,
-      )
+      // Mint the NFT using the API
+      const result = await mintReflectionViaAPI(selectedMood, reflection.trim() || undefined, newStreak, walletAddress)
 
-      if (!mintResult.success) {
-        toast({
-          title: "NFT minting failed",
-          description: mintResult.error || "Failed to mint reflection NFT",
-          variant: "destructive",
-        })
-        return
+      if (!result.success) {
+        throw new Error(result.error || "Minting failed")
       }
 
-      // Create new entry with NFT data
+      // Create new entry with real NFT data
       const newEntry: CheckInEntry = {
         date: today,
         mood: selectedMood,
         reflection: reflection.trim() || undefined,
         timestamp: Date.now(),
-        nftTokenId: mintResult.tokenId,
-        nftTxHash: mintResult.txHash,
+        nftTokenId: result.tokenId,
+        nftTxHash: result.txHash,
       }
 
       const newEntries = [...checkInData.entries, newEntry]
@@ -260,14 +170,25 @@ export function MoodCheckIn() {
       setCheckInData(newCheckInData)
 
       // Save to localStorage with the exact address case
-      if (address) {
-        localStorage.setItem(`checkIn_${address}`, JSON.stringify(newCheckInData))
-      }
+      localStorage.setItem(`checkIn_${walletAddress}`, JSON.stringify(newCheckInData))
 
       toast({
         title: "Check-in recorded & NFT minted! 🎉",
-        description: `Your reflection NFT #${mintResult.tokenId} has been minted successfully!`,
-        variant: "default",
+        description: (
+          <div className="flex flex-col gap-2">
+            <span>Your reflection NFT has been minted on-chain!</span>
+            {result.txHash && (
+              <a
+                href={`https://subnets.avax.network/goodcare/tx/${result.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+              >
+                View on Explorer <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+        ),
       })
 
       setSelectedMood(null)
@@ -277,13 +198,17 @@ export function MoodCheckIn() {
       console.error("Check-in error:", error)
       toast({
         title: "Check-in failed",
-        description: "There was an error processing your check-in. Please try again.",
+        description:
+          error instanceof Error ? error.message : "There was an error processing your check-in. Please try again.",
         variant: "destructive",
       })
     } finally {
-      setIsLoading(false)
+      setIsMinting(false)
     }
   }
+
+  // Calculate total NFTs owned (for display)
+  const totalOwnedNFTs = ownedNFTs?.length || 0
 
   return (
     <Card className="overflow-hidden">
@@ -302,28 +227,16 @@ export function MoodCheckIn() {
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-6 space-y-4">
-        {needsFunding && walletType === "avacloud" && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-            <h3 className="font-medium text-yellow-800 mb-2">Your wallet needs CARE tokens</h3>
-            <p className="text-sm text-yellow-700 mb-3">
-              You need CARE tokens to pay for gas fees when minting reflection NFTs.
-            </p>
-            <Button
-              onClick={requestFunds}
-              disabled={isFunding}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white"
-            >
-              {isFunding ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Funding...
-                </div>
-              ) : (
-                "Get 0.1 CARE from Faucet"
-              )}
-            </Button>
+        {/* Free Minting Notice */}
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 text-green-800 mb-2">
+            <Zap className="h-4 w-4" />
+            <h3 className="font-medium">Free NFT Minting!</h3>
           </div>
-        )}
+          <p className="text-sm text-green-700">
+            No gas fees required! Our backend handles the minting process for you.
+          </p>
+        </div>
 
         {!showMoodSelector ? (
           <div className="flex flex-col items-center justify-center py-4">
@@ -333,7 +246,7 @@ export function MoodCheckIn() {
             </p>
             <Button
               onClick={() => setShowMoodSelector(true)}
-              disabled={!canCheckInToday() || !isConnected || (needsFunding && walletType === "avacloud")}
+              disabled={!canCheckInToday() || !isConnected}
               className="w-full sm:w-auto"
             >
               {canCheckInToday() ? "Check In & Mint NFT" : "Already Checked In Today"}
@@ -374,34 +287,15 @@ export function MoodCheckIn() {
               <div className="text-xs text-muted-foreground text-right">{reflection.length}/500 characters</div>
             </div>
 
-            {/* Gas Cost Display */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <div className="flex items-center gap-2 text-sm">
-                <Coins className="h-4 w-4 text-blue-600" />
-                <span className="font-medium">NFT Minting Cost:</span>
-                {isEstimatingGas ? (
-                  <div className="flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Estimating...</span>
-                  </div>
-                ) : (
-                  <span className="text-blue-700">{gasCost} CARE</span>
-                )}
-              </div>
-              <p className="text-xs text-blue-600 mt-1">
-                Each check-in mints a unique reflection NFT with your mood and thoughts
-              </p>
-            </div>
-
             <div className="flex flex-col sm:flex-row gap-2 pt-4">
-              <Button onClick={handleCheckIn} disabled={isLoading || selectedMood === null} className="flex-1">
-                {isLoading ? (
+              <Button onClick={handleCheckIn} disabled={isMinting || selectedMood === null} className="flex-1">
+                {isMinting ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Minting NFT...
                   </div>
                 ) : (
-                  "Submit Check-In & Mint NFT"
+                  "Submit Check-In & Mint NFT (Free!)"
                 )}
               </Button>
               <Button
@@ -412,7 +306,7 @@ export function MoodCheckIn() {
                   setReflection("")
                 }}
                 className="sm:w-auto"
-                disabled={isLoading}
+                disabled={isMinting}
               >
                 Cancel
               </Button>
@@ -432,7 +326,7 @@ export function MoodCheckIn() {
             <span className="text-sm text-muted-foreground">Reflection NFTs</span>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span className="text-2xl font-bold">{checkInData.totalCheckIns}</span>
+              <span className="text-2xl font-bold">{totalOwnedNFTs}</span>
             </div>
           </div>
         </div>
