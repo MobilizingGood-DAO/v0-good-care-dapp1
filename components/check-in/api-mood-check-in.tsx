@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Calendar, CheckCircle, Star, Heart, Loader2, ExternalLink, Zap } from "lucide-react"
+import { Calendar, CheckCircle, Star, Heart, Loader2, ExternalLink, Zap, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useWallet } from "@/providers/wallet-provider"
 import { useContract, useAddress, useOwnedNFTs } from "@thirdweb-dev/react"
@@ -53,6 +53,7 @@ export function APIMoodCheckIn() {
   })
   const [showMoodSelector, setShowMoodSelector] = useState(false)
   const [isMinting, setIsMinting] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<string>("")
 
   // Load check-in data from localStorage
   useEffect(() => {
@@ -98,11 +99,26 @@ export function APIMoodCheckIn() {
   // Handle mood selection
   const handleMoodSelect = (mood: number) => {
     setSelectedMood(mood)
+    console.log("Mood selected:", mood)
   }
 
   // Handle check-in with API-based NFT minting
   const handleCheckIn = async () => {
+    console.log("🚀 Check-in button clicked!")
+    console.log("Wallet connected:", isConnected)
+    console.log("Wallet address:", walletAddress)
+    console.log("Selected mood:", selectedMood)
+    console.log("Can check in today:", canCheckInToday())
+
+    setDebugInfo(`Starting check-in process...
+Wallet: ${walletAddress}
+Mood: ${selectedMood}
+Connected: ${isConnected}`)
+
     if (!isConnected || !walletAddress) {
+      const errorMsg = "Wallet not connected"
+      console.error("❌", errorMsg)
+      setDebugInfo((prev) => prev + `\n❌ ${errorMsg}`)
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet to check in",
@@ -112,6 +128,9 @@ export function APIMoodCheckIn() {
     }
 
     if (!canCheckInToday()) {
+      const errorMsg = "Already checked in today"
+      console.error("❌", errorMsg)
+      setDebugInfo((prev) => prev + `\n❌ ${errorMsg}`)
       toast({
         title: "Already checked in",
         description: "You've already checked in today. Come back tomorrow!",
@@ -121,6 +140,9 @@ export function APIMoodCheckIn() {
     }
 
     if (selectedMood === null) {
+      const errorMsg = "No mood selected"
+      console.error("❌", errorMsg)
+      setDebugInfo((prev) => prev + `\n❌ ${errorMsg}`)
       toast({
         title: "No mood selected",
         description: "Please select how you're feeling today",
@@ -136,13 +158,22 @@ export function APIMoodCheckIn() {
       const newCheckInNumber = checkInData.totalCheckIns + 1
       const newStreak = checkInData.streak + 1
 
+      console.log("📝 Preparing to mint NFT...")
+      setDebugInfo((prev) => prev + `\n📝 Preparing to mint NFT...`)
+
       toast({
         title: "Minting your reflection NFT...",
         description: "This may take a few moments. No gas fees required! ✨",
       })
 
-      // Mint the NFT using the API - following the exact format requested
+      // Mint the NFT using the API
+      console.log("🔗 Calling API with:", { selectedMood, reflection: reflection.trim(), newStreak, walletAddress })
+      setDebugInfo((prev) => prev + `\n🔗 Calling API...`)
+
       const result = await mintReflectionViaAPI(selectedMood, reflection.trim() || undefined, newStreak, walletAddress)
+
+      console.log("📦 API Response:", result)
+      setDebugInfo((prev) => prev + `\n📦 API Response: ${JSON.stringify(result, null, 2)}`)
 
       if (!result.success) {
         throw new Error(result.error || "Minting failed")
@@ -172,6 +203,9 @@ export function APIMoodCheckIn() {
       // Save to localStorage with the exact address case
       localStorage.setItem(`checkIn_${walletAddress}`, JSON.stringify(newCheckInData))
 
+      console.log("✅ Check-in successful!")
+      setDebugInfo((prev) => prev + `\n✅ Check-in successful!`)
+
       toast({
         title: "Reflection NFT minted successfully! 🎉",
         description: (
@@ -195,7 +229,8 @@ export function APIMoodCheckIn() {
       setReflection("")
       setShowMoodSelector(false)
     } catch (error) {
-      console.error("Check-in error:", error)
+      console.error("💥 Check-in error:", error)
+      setDebugInfo((prev) => prev + `\n💥 Error: ${error instanceof Error ? error.message : String(error)}`)
       toast({
         title: "Minting failed",
         description:
@@ -229,6 +264,31 @@ export function APIMoodCheckIn() {
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-6 space-y-4">
+        {/* Debug Info */}
+        {debugInfo && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center gap-2 text-gray-800 mb-2">
+              <AlertCircle className="h-4 w-4" />
+              <h3 className="font-medium">Debug Info</h3>
+            </div>
+            <pre className="text-xs text-gray-700 whitespace-pre-wrap">{debugInfo}</pre>
+          </div>
+        )}
+
+        {/* Connection Status */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 text-blue-800 mb-2">
+            <Zap className="h-4 w-4" />
+            <h3 className="font-medium">Connection Status</h3>
+          </div>
+          <div className="text-sm text-blue-700 space-y-1">
+            <p>Wallet Connected: {isConnected ? "✅ Yes" : "❌ No"}</p>
+            <p>Wallet Address: {walletAddress || "None"}</p>
+            <p>Thirdweb Address: {thirdwebAddress || "None"}</p>
+            <p>Can Check In: {canCheckInToday() ? "✅ Yes" : "❌ No"}</p>
+          </div>
+        </div>
+
         {/* Free Minting Notice */}
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
           <div className="flex items-center gap-2 text-green-800 mb-2">
@@ -247,7 +307,10 @@ export function APIMoodCheckIn() {
               Start your reflection journey by checking in daily and minting care on-chain
             </p>
             <Button
-              onClick={() => setShowMoodSelector(true)}
+              onClick={() => {
+                console.log("🎯 Show mood selector clicked")
+                setShowMoodSelector(true)
+              }}
               disabled={!canCheckInToday() || !isConnected}
               className="w-full sm:w-auto"
             >
@@ -306,6 +369,7 @@ export function APIMoodCheckIn() {
                   setShowMoodSelector(false)
                   setSelectedMood(null)
                   setReflection("")
+                  setDebugInfo("")
                 }}
                 className="sm:w-auto"
                 disabled={isMinting}
