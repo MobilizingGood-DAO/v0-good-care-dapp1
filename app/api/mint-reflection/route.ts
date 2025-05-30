@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { ThirdwebSDK } from "@thirdweb-dev/sdk"
-import { ethers } from "ethers"
+import { Wallet, providers } from "ethers"
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
 
     const date = new Date().toISOString().split("T")[0] // YYYY-MM-DD
 
-    // Initialize the signer with the minter private key - using root-level ethers import
-    const provider = new ethers.providers.JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
-    const signer = new ethers.Wallet(process.env.MINTER_PRIVATE_KEY!, provider)
+    // Initialize the signer with the minter private key - using correct ethers imports
+    const provider = new providers.JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
+    const signer = new Wallet(process.env.MINTER_PRIVATE_KEY!, provider)
 
     // Initialize Thirdweb SDK
     const sdk = ThirdwebSDK.fromSigner(signer, {
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const metadata = {
       name: `Daily Reflection – ${date}`,
       description: `A daily reflection from ${date} capturing mood and thoughts on the GOOD CARE journey. Mood: ${moodLabels[mood]} (${mood}/5). ${journal ? `Reflection: "${journal}"` : "No written reflection."}`,
-      image: "ipfs://QmYourSharedReflectionBadgeImage", // Shared reflection badge image
+      image: "ipfs://QmXRna91Fhh7MR1AErjRfpXMM9DnxTJ8eqjVtqxyBxVNu3/0.png", // Official CARE reflection badge
       attributes: [
         {
           trait_type: "Mood",

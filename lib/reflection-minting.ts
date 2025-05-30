@@ -39,7 +39,7 @@ export function createReflectionMetadata(
   return {
     name: `Daily Reflection #${checkInNumber}`,
     description: `A daily reflection from ${date} capturing mood and thoughts on the GOOD CARE journey. Mood: ${moodLabels[mood]} (${mood}/5). ${reflectionText ? `Reflection: "${reflectionText}"` : "No written reflection."}`,
-    image: "ipfs://QmYourSharedReflectionBadgeImage", // Shared reflection badge image
+    image: "ipfs://QmXRna91Fhh7MR1AErjRfpXMM9DnxTJ8eqjVtqxyBxVNu3/0.png", // Official CARE reflection badge
     attributes: [
       {
         trait_type: "Mood",
