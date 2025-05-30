@@ -1,5 +1,5 @@
-// NFT Drop contract address on GOOD CARE Network
-export const REFLECTION_NFT_CONTRACT = "0x5fb4048031364A47c320236312fF66CB42ae822F"
+// CARE Daily Reflections NFT contract address
+export const REFLECTION_NFT_CONTRACT = "0x141b77a109011475A4c347fD19Dd4ead79AE912F"
 
 // Interface for reflection metadata
 export interface ReflectionMetadata {
@@ -39,7 +39,7 @@ export function createReflectionMetadata(
   return {
     name: `Daily Reflection #${checkInNumber}`,
     description: `A daily reflection from ${date} capturing mood and thoughts on the GOOD CARE journey. Mood: ${moodLabels[mood]} (${mood}/5). ${reflectionText ? `Reflection: "${reflectionText}"` : "No written reflection."}`,
-    image: `/placeholder.svg?height=400&width=400&text=${encodeURIComponent(moodEmojis[mood])}`,
+    image: "ipfs://QmYourSharedReflectionBadgeImage", // Shared reflection badge image
     attributes: [
       {
         trait_type: "Mood",
@@ -78,47 +78,70 @@ export function createReflectionMetadata(
   }
 }
 
-// Estimate gas cost in CARE tokens (simplified version without ethers)
+// Estimate gas cost (free since backend handles it)
 export async function estimateGasCostInCARE(): Promise<{ gasCostInCARE: string; gasCostInWei: string }> {
-  try {
-    // Return a fixed estimate for now to avoid ethers import issues
-    return {
-      gasCostInCARE: "0.003",
-      gasCostInWei: "3000000000000000", // 0.003 ETH in wei
-    }
-  } catch (error) {
-    console.error("Error estimating gas cost:", error)
-    // Return default estimate
-    return {
-      gasCostInCARE: "0.003",
-      gasCostInWei: "3000000000000000", // 0.003 ETH in wei
-    }
+  return {
+    gasCostInCARE: "0.000",
+    gasCostInWei: "0",
   }
 }
 
-// Check if user has sufficient balance for minting (simplified version)
+// Check if user has sufficient balance (always true since backend handles minting)
 export async function checkSufficientBalance(
   address: string,
 ): Promise<{ sufficient: boolean; balance: string; required: string }> {
+  return {
+    sufficient: true,
+    balance: "N/A",
+    required: "0.000",
+  }
+}
+
+// Mint reflection via API - main function for frontend integration
+export async function mintReflectionViaAPI(
+  mood: number,
+  journal: string | undefined,
+  streak: number,
+  address: string,
+): Promise<MintingResult> {
   try {
-    // For now, return a simplified check to avoid ethers import issues
-    // In production, this would use a proper RPC call
-    return {
-      sufficient: false, // This will trigger the faucet flow
-      balance: "0",
-      required: "0.003",
+    const response = await fetch("/api/mint-reflection", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mood,
+        journal: journal || "",
+        streak,
+        address,
+      }),
+    })
+
+    const result = await response.json()
+
+    if (response.ok && result.success) {
+      return {
+        success: true,
+        tokenId: result.tokenId,
+        txHash: result.transactionHash,
+      }
+    } else {
+      return {
+        success: false,
+        error: result.error || "Unable to mint your reflection right now. Please try again in a moment.",
+      }
     }
   } catch (error) {
-    console.error("Error checking balance:", error)
+    console.error("API mint error:", error)
     return {
-      sufficient: false,
-      balance: "0",
-      required: "0.003",
+      success: false,
+      error: "Network error. Please check your connection and try again.",
     }
   }
 }
 
-// Legacy function for backward compatibility - simplified version
+// Legacy function for backward compatibility
 export async function mintReflectionNFT(
   mood: number,
   reflectionText: string | undefined,
@@ -126,43 +149,11 @@ export async function mintReflectionNFT(
   streak: number,
   checkInNumber: number,
 ): Promise<MintingResult> {
-  try {
-    // Create metadata
-    const metadata = createReflectionMetadata(mood, reflectionText, date, streak, checkInNumber)
-
-    // For backward compatibility, simulate a successful minting
-    // The real minting is now handled by Thirdweb in the component
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    // Generate a random token ID and transaction hash
-    const tokenId = Math.floor(Math.random() * 10000) + 1
-    const txHash = `0x${Array(64)
-      .fill(0)
-      .map(() => Math.floor(Math.random() * 16).toString(16))
-      .join("")}`
-
-    return {
-      success: true,
-      tokenId: tokenId.toString(),
-      txHash,
-    }
-  } catch (error: any) {
-    console.error("Error minting reflection NFT:", error)
-    return {
-      success: false,
-      error: error.message || "Failed to mint reflection NFT",
-    }
-  }
+  // Redirect to new API-based minting
+  return mintReflectionViaAPI(mood, reflectionText, streak, "")
 }
 
-// Get user's reflection NFTs - now returns empty array since Thirdweb handles this
+// Get user's reflection NFTs (deprecated - use Thirdweb hooks instead)
 export async function getUserReflectionNFTs(address: string): Promise<any[]> {
-  try {
-    // This function is now deprecated in favor of Thirdweb's useOwnedNFTs hook
-    // Return empty array for backward compatibility
-    return []
-  } catch (error) {
-    console.error("Error fetching reflection NFTs:", error)
-    return []
-  }
+  return []
 }

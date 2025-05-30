@@ -9,7 +9,7 @@ import { REFLECTION_NFT_CONTRACT } from "@/lib/reflection-minting"
 
 export function ThirdwebNFTGallery() {
   const address = useAddress()
-  const { contract } = useContract(REFLECTION_NFT_CONTRACT, "nft-drop")
+  const { contract } = useContract(REFLECTION_NFT_CONTRACT)
   const { data: ownedNFTs, isLoading: isLoadingNFTs } = useOwnedNFTs(contract, address)
 
   if (!address) {

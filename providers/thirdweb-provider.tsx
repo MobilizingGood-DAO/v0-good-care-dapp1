@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { ThirdwebProvider, type Chain } from "@thirdweb-dev/react"
 
 // Define the GOOD CARE Subnet as a custom chain
