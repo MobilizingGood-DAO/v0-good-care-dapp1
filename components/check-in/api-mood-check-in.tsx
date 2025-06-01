@@ -8,9 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Calendar, CheckCircle, Star, Heart, Loader2, ExternalLink, Zap, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useWallet } from "@/providers/wallet-provider"
-import { useContract, useAddress, useOwnedNFTs } from "@thirdweb-dev/react"
 import { useToast } from "@/hooks/use-toast"
-import { mintReflectionViaAPI, REFLECTION_NFT_CONTRACT } from "@/lib/reflection-minting"
+import { mintReflectionViaAPI } from "@/lib/reflection-minting"
 
 // Mood emojis and descriptions
 const MOODS = [
@@ -35,12 +34,7 @@ interface CheckInEntry {
 
 export function APIMoodCheckIn() {
   const { address: walletAddress, isConnected } = useWallet()
-  const thirdwebAddress = useAddress()
   const { toast } = useToast()
-
-  // Thirdweb hooks for displaying NFTs
-  const { contract } = useContract(REFLECTION_NFT_CONTRACT, "nft-drop")
-  const { data: ownedNFTs, isLoading: isLoadingOwnedNFTs } = useOwnedNFTs(contract, thirdwebAddress)
 
   // Component state
   const [selectedMood, setSelectedMood] = useState<number | null>(null)
@@ -54,13 +48,17 @@ export function APIMoodCheckIn() {
   const [showMoodSelector, setShowMoodSelector] = useState(false)
   const [isMinting, setIsMinting] = useState(false)
   const [debugInfo, setDebugInfo] = useState<string>("")
+  const [nftCount, setNftCount] = useState(0)
 
   // Load check-in data from localStorage
   useEffect(() => {
     if (isConnected && walletAddress) {
       loadCheckInData()
+      // Count NFTs from entries
+      const count = checkInData.entries.filter((entry) => entry.nftTokenId).length
+      setNftCount(count)
     }
-  }, [isConnected, walletAddress])
+  }, [isConnected, walletAddress, checkInData.entries])
 
   // Load check-in data from all possible storage keys
   const loadCheckInData = () => {
@@ -199,6 +197,7 @@ Connected: ${isConnected}`)
       }
 
       setCheckInData(newCheckInData)
+      setNftCount(nftCount + 1)
 
       // Save to localStorage with the exact address case
       localStorage.setItem(`checkIn_${walletAddress}`, JSON.stringify(newCheckInData))
@@ -244,9 +243,6 @@ Connected: ${isConnected}`)
     }
   }
 
-  // Calculate total NFTs owned (for display)
-  const totalOwnedNFTs = ownedNFTs?.length || 0
-
   return (
     <Card className="overflow-hidden">
       <CardHeader className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
@@ -284,7 +280,6 @@ Connected: ${isConnected}`)
           <div className="text-sm text-blue-700 space-y-1">
             <p>Wallet Connected: {isConnected ? "✅ Yes" : "❌ No"}</p>
             <p>Wallet Address: {walletAddress || "None"}</p>
-            <p>Thirdweb Address: {thirdwebAddress || "None"}</p>
             <p>Can Check In: {canCheckInToday() ? "✅ Yes" : "❌ No"}</p>
           </div>
         </div>
@@ -392,7 +387,7 @@ Connected: ${isConnected}`)
             <span className="text-sm text-muted-foreground">Reflection NFTs</span>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span className="text-2xl font-bold">{totalOwnedNFTs}</span>
+              <span className="text-2xl font-bold">{nftCount}</span>
             </div>
           </div>
         </div>

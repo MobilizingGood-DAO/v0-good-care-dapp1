@@ -78,25 +78,6 @@ export function createReflectionMetadata(
   }
 }
 
-// Estimate gas cost (free since backend handles it)
-export async function estimateGasCostInCARE(): Promise<{ gasCostInCARE: string; gasCostInWei: string }> {
-  return {
-    gasCostInCARE: "0.000",
-    gasCostInWei: "0",
-  }
-}
-
-// Check if user has sufficient balance (always true since backend handles minting)
-export async function checkSufficientBalance(
-  address: string,
-): Promise<{ sufficient: boolean; balance: string; required: string }> {
-  return {
-    sufficient: true,
-    balance: "N/A",
-    required: "0.000",
-  }
-}
-
 // Mint reflection via API - main function for frontend integration
 export async function mintReflectionViaAPI(
   mood: number,
@@ -105,6 +86,8 @@ export async function mintReflectionViaAPI(
   address: string,
 ): Promise<MintingResult> {
   try {
+    console.log("Calling mint-reflection API with:", { mood, journal, streak, address })
+
     const response = await fetch("/api/mint-reflection", {
       method: "POST",
       headers: {
@@ -118,7 +101,9 @@ export async function mintReflectionViaAPI(
       }),
     })
 
+    console.log("API response status:", response.status)
     const result = await response.json()
+    console.log("API response body:", result)
 
     if (response.ok && result.success) {
       return {
@@ -151,9 +136,4 @@ export async function mintReflectionNFT(
 ): Promise<MintingResult> {
   // Redirect to new API-based minting
   return mintReflectionViaAPI(mood, reflectionText, streak, "")
-}
-
-// Get user's reflection NFTs (deprecated - use Thirdweb hooks instead)
-export async function getUserReflectionNFTs(address: string): Promise<any[]> {
-  return []
 }

@@ -1,20 +1,27 @@
-import { Overview } from "@/components/overview"
-import { ThirdwebMoodCheckIn } from "@/components/check-in/thirdweb-mood-check-in"
+import { EnhancedDailyCheckIn } from "@/components/check-in/enhanced-daily-check-in"
+import { CareLeaderboard } from "@/components/care-leaderboard"
+import { UserProfileCard } from "@/components/user-profile-card"
 
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Welcome to your GOOD Passport dashboard</p>
+        <h1 className="text-3xl font-bold tracking-tight">Your CARE Journey</h1>
+        <p className="text-muted-foreground">
+          Welcome to your daily reflection space. Take a moment to check in with yourself.
+        </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <div className="md:col-span-2 lg:col-span-2">
-          <ThirdwebMoodCheckIn />
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Main check-in area */}
+        <div className="lg:col-span-2 space-y-6">
+          <EnhancedDailyCheckIn />
         </div>
-        <div className="md:col-span-1 lg:col-span-1">
-          <Overview />
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          <UserProfileCard />
+          <CareLeaderboard />
         </div>
       </div>
     </div>

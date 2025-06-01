@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { ThirdwebSDK } from "@thirdweb-dev/sdk"
-import { Wallet, providers } from "ethers"
+// Import ethers directly instead of from Thirdweb
+import { ethers } from "ethers"
 
 export async function POST(request: NextRequest) {
   console.log("🚀 Mint reflection API called")
@@ -23,14 +24,14 @@ export async function POST(request: NextRequest) {
 
     const date = new Date().toISOString().split("T")[0] // YYYY-MM-DD
 
-    // Initialize the signer with the minter private key
+    // Initialize the signer with the minter private key using ethers directly
     console.log("🔗 Initializing provider and signer...")
-    const provider = new providers.JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
-    const signer = new Wallet(process.env.MINTER_PRIVATE_KEY!, provider)
+    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
+    const signer = new ethers.Wallet(process.env.MINTER_PRIVATE_KEY!, provider)
 
     console.log("👛 Signer address:", await signer.getAddress())
 
-    // Initialize Thirdweb SDK
+    // Initialize Thirdweb SDK with the signer
     console.log("🔧 Initializing Thirdweb SDK...")
     const sdk = ThirdwebSDK.fromSigner(signer, {
       chainId: 741741, // GOOD CARE Network
