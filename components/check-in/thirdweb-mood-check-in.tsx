@@ -8,14 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Calendar, CheckCircle, Star, Heart, Coins, Loader2, ExternalLink } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useWallet } from "@/providers/wallet-provider"
-import { useContract, useAddress, useClaimNFT, useOwnedNFTs } from "@thirdweb-dev/react"
 import { useToast } from "@/hooks/use-toast"
-import {
-  createReflectionMetadata,
-  estimateGasCostInCARE,
-  checkSufficientBalance,
-  REFLECTION_NFT_CONTRACT,
-} from "@/lib/reflection-minting"
+import { estimateGasCostInCARE, checkSufficientBalance } from "@/lib/reflection-minting"
 
 // Mood emojis and descriptions
 const MOODS = [
@@ -40,13 +34,7 @@ interface CheckInEntry {
 
 export function ThirdwebMoodCheckIn() {
   const { address: walletAddress, isConnected, walletType } = useWallet()
-  const thirdwebAddress = useAddress()
   const { toast } = useToast()
-
-  // Thirdweb hooks
-  const { contract } = useContract(REFLECTION_NFT_CONTRACT, "nft-drop")
-  const { data: ownedNFTs, isLoading: isLoadingOwnedNFTs } = useOwnedNFTs(contract, thirdwebAddress)
-  const { mutateAsync: claimNFT, isLoading: isClaiming, error: claimError } = useClaimNFT(contract)
 
   // Component state
   const [selectedMood, setSelectedMood] = useState<number | null>(null)
@@ -63,6 +51,7 @@ export function ThirdwebMoodCheckIn() {
   const [needsFunding, setNeedsFunding] = useState(false)
   const [isFunding, setIsFunding] = useState(false)
   const [balanceInfo, setBalanceInfo] = useState({ balance: "0", required: "0.003" })
+  const [isMinting, setIsMinting] = useState(false)
 
   // Load check-in data from localStorage
   useEffect(() => {
@@ -189,9 +178,9 @@ export function ThirdwebMoodCheckIn() {
     setSelectedMood(mood)
   }
 
-  // Handle check-in with real NFT minting
+  // Handle check-in with API call
   const handleCheckIn = async () => {
-    if (!isConnected || !thirdwebAddress) {
+    if (!isConnected || !walletAddress) {
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet to check in",
@@ -218,48 +207,41 @@ export function ThirdwebMoodCheckIn() {
       return
     }
 
-    if (needsFunding) {
-      toast({
-        title: "Insufficient CARE balance",
-        description: "Please fund your wallet first to cover gas fees",
-        variant: "destructive",
-      })
-      return
-    }
+    setIsMinting(true)
 
     try {
       const today = getTodayString()
       const newCheckInNumber = checkInData.totalCheckIns + 1
       const newStreak = checkInData.streak + 1
 
-      // Create metadata for the NFT
-      const metadata = createReflectionMetadata(
-        selectedMood,
-        reflection.trim() || undefined,
-        today,
-        newStreak,
-        newCheckInNumber,
-      )
-
-      toast({
-        title: "Minting your reflection NFT...",
-        description: "Please confirm the transaction in your wallet",
+      // Call the API to record the reflection
+      const response = await fetch("/api/mint-reflection", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mood: selectedMood,
+          journal: reflection.trim() || undefined,
+          streak: newStreak,
+          address: walletAddress,
+        }),
       })
 
-      // Mint the NFT using Thirdweb
-      const tx = await claimNFT({
-        to: thirdwebAddress,
-        quantity: 1,
-      })
+      const result = await response.json()
 
-      // Create new entry with real NFT data
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to record reflection")
+      }
+
+      // Create new entry with API response data
       const newEntry: CheckInEntry = {
         date: today,
         mood: selectedMood,
         reflection: reflection.trim() || undefined,
         timestamp: Date.now(),
-        nftTokenId: tx.id?.toString(),
-        nftTxHash: tx.receipt?.transactionHash,
+        nftTokenId: result.tokenId,
+        nftTxHash: result.transactionHash,
       }
 
       const newEntries = [...checkInData.entries, newEntry]
@@ -279,18 +261,18 @@ export function ThirdwebMoodCheckIn() {
       }
 
       toast({
-        title: "Check-in recorded & NFT minted! 🎉",
+        title: "Check-in recorded! 🎉",
         description: (
           <div className="flex flex-col gap-2">
-            <span>Your reflection NFT has been minted on-chain!</span>
-            {tx.receipt?.transactionHash && (
+            <span>{result.message || "Your reflection has been recorded successfully!"}</span>
+            {result.transactionHash && (
               <a
-                href={`https://subnets.avax.network/goodcare/tx/${tx.receipt.transactionHash}`}
+                href={`https://subnets.avax.network/goodcare/tx/${result.transactionHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
               >
-                View on Explorer <ExternalLink className="h-3 w-3" />
+                View Transaction <ExternalLink className="h-3 w-3" />
               </a>
             )}
           </div>
@@ -313,11 +295,13 @@ export function ThirdwebMoodCheckIn() {
           error instanceof Error ? error.message : "There was an error processing your check-in. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setIsMinting(false)
     }
   }
 
   // Calculate total NFTs owned (for display)
-  const totalOwnedNFTs = ownedNFTs?.length || 0
+  const totalOwnedNFTs = checkInData.entries.filter((entry) => entry.nftTokenId).length
 
   return (
     <Card className="overflow-hidden">
@@ -332,7 +316,7 @@ export function ThirdwebMoodCheckIn() {
           </Badge>
         </div>
         <CardDescription className="text-white/80">
-          Check in daily and mint your reflection as an NFT on the GOOD CARE Network
+          Check in daily and record your reflection journey on the GOOD CARE Network
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-6 space-y-4">
@@ -365,15 +349,13 @@ export function ThirdwebMoodCheckIn() {
         {!showMoodSelector ? (
           <div className="flex flex-col items-center justify-center py-4">
             <div className="text-6xl mb-4">😐</div>
-            <p className="text-center text-muted-foreground mb-4">
-              Start your reflection journey by checking in daily and minting NFTs
-            </p>
+            <p className="text-center text-muted-foreground mb-4">Start your reflection journey by checking in daily</p>
             <Button
               onClick={() => setShowMoodSelector(true)}
-              disabled={!canCheckInToday() || !isConnected || (needsFunding && walletType === "avacloud")}
+              disabled={!canCheckInToday() || !isConnected}
               className="w-full sm:w-auto"
             >
-              {canCheckInToday() ? "Check In & Mint NFT" : "Already Checked In Today"}
+              {canCheckInToday() ? "Check In Today" : "Already Checked In Today"}
             </Button>
           </div>
         ) : (
@@ -415,7 +397,7 @@ export function ThirdwebMoodCheckIn() {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <div className="flex items-center gap-2 text-sm">
                 <Coins className="h-4 w-4 text-blue-600" />
-                <span className="font-medium">NFT Minting Cost:</span>
+                <span className="font-medium">Recording Cost:</span>
                 {isEstimatingGas ? (
                   <div className="flex items-center gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -426,19 +408,19 @@ export function ThirdwebMoodCheckIn() {
                 )}
               </div>
               <p className="text-xs text-blue-600 mt-1">
-                Each check-in mints a unique reflection NFT with your mood and thoughts
+                Each check-in records your reflection journey on the blockchain
               </p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 pt-4">
-              <Button onClick={handleCheckIn} disabled={isClaiming || selectedMood === null} className="flex-1">
-                {isClaiming ? (
+              <Button onClick={handleCheckIn} disabled={isMinting || selectedMood === null} className="flex-1">
+                {isMinting ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Minting NFT...
+                    Recording...
                   </div>
                 ) : (
-                  "Submit Check-In & Mint NFT"
+                  "Submit Check-In"
                 )}
               </Button>
               <Button
@@ -449,7 +431,7 @@ export function ThirdwebMoodCheckIn() {
                   setReflection("")
                 }}
                 className="sm:w-auto"
-                disabled={isClaiming}
+                disabled={isMinting}
               >
                 Cancel
               </Button>
@@ -466,7 +448,7 @@ export function ThirdwebMoodCheckIn() {
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-sm text-muted-foreground">Reflection NFTs</span>
+            <span className="text-sm text-muted-foreground">Total Reflections</span>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
               <span className="text-2xl font-bold">{totalOwnedNFTs}</span>

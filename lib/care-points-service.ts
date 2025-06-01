@@ -1,188 +1,225 @@
-// CARE Points service for managing user points and streaks
+// CARE Points system for daily reflections
 export interface CarePointsData {
-  userId: string
   totalPoints: number
   currentStreak: number
   longestStreak: number
-  lastCheckIn: string | null
-  checkInHistory: CheckInEntry[]
   level: number
-  nextLevelPoints: number
+  lastCheckIn: string | null
+  checkInHistory: CheckInRecord[]
 }
 
-export interface CheckInEntry {
+export interface CheckInRecord {
   date: string
+  mood: number
   points: number
-  mood: string
-  gratitudeNote?: string
-  resourcesViewed: string[]
+  streak: number
+  reflection?: string
+  timestamp: number
 }
 
 export interface LeaderboardEntry {
-  userId: string
+  address: string
   username: string
-  avatar?: string
   totalPoints: number
   currentStreak: number
   level: number
-  rank: number
+  avatar?: string
 }
 
-// Calculate points based on streak and engagement
-export function calculateCheckInPoints(
-  streak: number,
-  engagement: {
-    hasGratitudeNote: boolean
-    resourcesViewed: number
-    moodRating: number
-  },
-): number {
-  let basePoints = 10
-
-  // Streak bonuses
-  if (streak >= 7) basePoints += 5 // Week streak
-  if (streak >= 30) basePoints += 10 // Month streak
-  if (streak >= 100) basePoints += 20 // Century streak
-
-  // Engagement bonuses
-  if (engagement.hasGratitudeNote) basePoints += 3
-  if (engagement.resourcesViewed > 0) basePoints += 2
-  if (engagement.moodRating >= 4) basePoints += 2 // Positive mood bonus
-
-  return basePoints
+// Calculate level based on total points
+export function calculateLevel(totalPoints: number): number {
+  if (totalPoints < 100) return 1
+  if (totalPoints < 300) return 2
+  if (totalPoints < 600) return 3
+  if (totalPoints < 1000) return 4
+  if (totalPoints < 1500) return 5
+  return Math.floor(totalPoints / 300) + 1
 }
 
-// Calculate user level based on total points
-export function calculateLevel(totalPoints: number): { level: number; nextLevelPoints: number } {
-  // Level progression: 0-99 (Level 1), 100-299 (Level 2), 300-599 (Level 3), etc.
-  const level = Math.floor(Math.sqrt(totalPoints / 100)) + 1
-  const nextLevelPoints = Math.pow(level, 2) * 100
-
-  return { level, nextLevelPoints }
+// Calculate points for a check-in
+export function calculateCheckInPoints(streak: number, mood: number): number {
+  const basePoints = 10
+  const streakBonus = Math.min(streak * 2, 20) // Max 20 bonus points
+  const moodBonus = mood >= 4 ? 5 : 0 // Bonus for positive mood
+  return basePoints + streakBonus + moodBonus
 }
 
-// Get today's date as YYYY-MM-DD
-const getTodayString = () => new Date().toISOString().split("T")[0]
+// Get level progress (0-100%)
+export function getLevelProgress(totalPoints: number): { current: number; next: number; progress: number } {
+  const currentLevel = calculateLevel(totalPoints)
+  const currentLevelThreshold = getLevelThreshold(currentLevel)
+  const nextLevelThreshold = getLevelThreshold(currentLevel + 1)
 
-// Check if user can check in today
-export function canCheckInToday(lastCheckIn: string | null): boolean {
-  if (!lastCheckIn) return true
-  return lastCheckIn !== getTodayString()
+  const progress = ((totalPoints - currentLevelThreshold) / (nextLevelThreshold - currentLevelThreshold)) * 100
+
+  return {
+    current: currentLevel,
+    next: currentLevel + 1,
+    progress: Math.min(Math.max(progress, 0), 100),
+  }
 }
 
-// Calculate streak based on check-in history
-export function calculateStreak(checkInHistory: CheckInEntry[]): number {
-  if (checkInHistory.length === 0) return 0
+function getLevelThreshold(level: number): number {
+  if (level <= 1) return 0
+  if (level === 2) return 100
+  if (level === 3) return 300
+  if (level === 4) return 600
+  if (level === 5) return 1000
+  if (level === 6) return 1500
+  return 1500 + (level - 6) * 300
+}
 
-  const sortedHistory = [...checkInHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+// CARE Points service class
+export class CarePointsService {
+  private storageKey: string
 
-  let streak = 0
-  let currentDate = new Date()
+  constructor(address: string) {
+    this.storageKey = `carePoints_${address}`
+  }
 
-  for (const entry of sortedHistory) {
-    const entryDate = new Date(entry.date)
-    const daysDiff = Math.floor((currentDate.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24))
+  // Load user's CARE Points data
+  loadData(): CarePointsData {
+    if (typeof window === "undefined") {
+      return this.getDefaultData()
+    }
 
-    if (daysDiff === streak) {
-      streak++
-      currentDate = entryDate
-    } else {
-      break
+    try {
+      const stored = localStorage.getItem(this.storageKey)
+      if (stored) {
+        const data = JSON.parse(stored)
+        return {
+          ...this.getDefaultData(),
+          ...data,
+          level: calculateLevel(data.totalPoints || 0),
+        }
+      }
+    } catch (error) {
+      console.error("Error loading CARE Points data:", error)
+    }
+
+    return this.getDefaultData()
+  }
+
+  // Save user's CARE Points data
+  saveData(data: CarePointsData): void {
+    if (typeof window === "undefined") return
+
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(data))
+    } catch (error) {
+      console.error("Error saving CARE Points data:", error)
     }
   }
 
-  return streak
+  // Record a daily check-in
+  recordCheckIn(mood: number, reflection?: string): { success: boolean; points: number; newStreak: number } {
+    const data = this.loadData()
+    const today = new Date().toISOString().split("T")[0]
+
+    // Check if already checked in today
+    if (data.lastCheckIn === today) {
+      return { success: false, points: 0, newStreak: data.currentStreak }
+    }
+
+    // Calculate new streak
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayString = yesterday.toISOString().split("T")[0]
+
+    let newStreak = 1
+    if (data.lastCheckIn === yesterdayString) {
+      newStreak = data.currentStreak + 1
+    }
+
+    // Calculate points
+    const points = calculateCheckInPoints(newStreak, mood)
+
+    // Create check-in record
+    const checkInRecord: CheckInRecord = {
+      date: today,
+      mood,
+      points,
+      streak: newStreak,
+      reflection,
+      timestamp: Date.now(),
+    }
+
+    // Update data
+    const updatedData: CarePointsData = {
+      totalPoints: data.totalPoints + points,
+      currentStreak: newStreak,
+      longestStreak: Math.max(data.longestStreak, newStreak),
+      level: calculateLevel(data.totalPoints + points),
+      lastCheckIn: today,
+      checkInHistory: [...data.checkInHistory, checkInRecord],
+    }
+
+    this.saveData(updatedData)
+
+    return { success: true, points, newStreak }
+  }
+
+  // Check if user can check in today
+  canCheckInToday(): boolean {
+    const data = this.loadData()
+    const today = new Date().toISOString().split("T")[0]
+    return data.lastCheckIn !== today
+  }
+
+  private getDefaultData(): CarePointsData {
+    return {
+      totalPoints: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+      level: 1,
+      lastCheckIn: null,
+      checkInHistory: [],
+    }
+  }
 }
 
-// In-memory storage for MVP (replace with Supabase later)
-const userCarePoints = new Map<string, CarePointsData>()
-
-export async function getUserCarePoints(userId: string): Promise<CarePointsData> {
-  const existing = userCarePoints.get(userId)
-
-  if (existing) {
-    return existing
-  }
-
-  // Initialize new user
-  const newData: CarePointsData = {
-    userId,
-    totalPoints: 0,
-    currentStreak: 0,
-    longestStreak: 0,
-    lastCheckIn: null,
-    checkInHistory: [],
-    level: 1,
-    nextLevelPoints: 100,
-  }
-
-  userCarePoints.set(userId, newData)
-  return newData
-}
-
-export async function recordCheckIn(
-  userId: string,
-  checkInData: {
-    mood: string
-    gratitudeNote?: string
-    resourcesViewed: string[]
-    moodRating: number
-  },
-): Promise<CarePointsData> {
-  const userData = await getUserCarePoints(userId)
-
-  if (!canCheckInToday(userData.lastCheckIn)) {
-    throw new Error("Already checked in today")
-  }
-
-  const today = getTodayString()
-  const isConsecutiveDay = userData.lastCheckIn === new Date(Date.now() - 86400000).toISOString().split("T")[0]
-
-  const newStreak = isConsecutiveDay ? userData.currentStreak + 1 : 1
-  const points = calculateCheckInPoints(newStreak, {
-    hasGratitudeNote: !!checkInData.gratitudeNote,
-    resourcesViewed: checkInData.resourcesViewed.length,
-    moodRating: checkInData.moodRating,
-  })
-
-  const newEntry: CheckInEntry = {
-    date: today,
-    points,
-    mood: checkInData.mood,
-    gratitudeNote: checkInData.gratitudeNote,
-    resourcesViewed: checkInData.resourcesViewed,
-  }
-
-  const newTotalPoints = userData.totalPoints + points
-  const { level, nextLevelPoints } = calculateLevel(newTotalPoints)
-
-  const updatedData: CarePointsData = {
-    ...userData,
-    totalPoints: newTotalPoints,
-    currentStreak: newStreak,
-    longestStreak: Math.max(userData.longestStreak, newStreak),
-    lastCheckIn: today,
-    checkInHistory: [...userData.checkInHistory, newEntry],
-    level,
-    nextLevelPoints,
-  }
-
-  userCarePoints.set(userId, updatedData)
-  return updatedData
-}
-
-export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
-  const allUsers = Array.from(userCarePoints.values())
-
-  // Sort by total points descending
-  const sorted = allUsers.sort((a, b) => b.totalPoints - a.totalPoints).slice(0, limit)
-
-  return sorted.map((user, index) => ({
-    userId: user.userId,
-    username: `User ${user.userId.slice(-6)}`, // Placeholder - will be replaced with social username
-    totalPoints: user.totalPoints,
-    currentStreak: user.currentStreak,
-    level: user.level,
-    rank: index + 1,
-  }))
+// Mock leaderboard data (in production, this would come from a database)
+export function getMockLeaderboard(): LeaderboardEntry[] {
+  return [
+    {
+      address: "0x1234...5678",
+      username: "CareGiver42",
+      totalPoints: 1250,
+      currentStreak: 15,
+      level: 5,
+      avatar: "🌱",
+    },
+    {
+      address: "0x2345...6789",
+      username: "MindfulSoul",
+      totalPoints: 980,
+      currentStreak: 8,
+      level: 4,
+      avatar: "🧘",
+    },
+    {
+      address: "0x3456...7890",
+      username: "HealingHeart",
+      totalPoints: 750,
+      currentStreak: 12,
+      level: 3,
+      avatar: "💚",
+    },
+    {
+      address: "0x4567...8901",
+      username: "WellnessWarrior",
+      totalPoints: 650,
+      currentStreak: 5,
+      level: 3,
+      avatar: "⭐",
+    },
+    {
+      address: "0x5678...9012",
+      username: "CompassionateOne",
+      totalPoints: 420,
+      currentStreak: 3,
+      level: 2,
+      avatar: "🤗",
+    },
+  ]
 }

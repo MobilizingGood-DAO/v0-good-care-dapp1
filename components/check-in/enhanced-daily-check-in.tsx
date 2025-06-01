@@ -1,331 +1,395 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { useToast } from "@/components/ui/use-toast"
 import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { Calendar, CheckCircle, Star, Heart, Loader2, Sparkles, Trophy, Target } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { motion, AnimatePresence } from "framer-motion"
-import { Heart, Star, Trophy, Calendar, Sparkles, BookOpen, Smile, Meh, Frown } from "lucide-react"
-import { useAuth } from "@/providers/auth-provider"
-import { getUserCarePoints, recordCheckIn, canCheckInToday, type CarePointsData } from "@/lib/care-points-service"
+import { Progress } from "@/components/ui/progress"
+import { useWallet } from "@/providers/wallet-provider"
+import { useToast } from "@/hooks/use-toast"
+import { CarePointsService, getLevelProgress } from "@/lib/care-points-service"
 
-const MOOD_OPTIONS = [
-  { value: "amazing", label: "Amazing", icon: Smile, color: "text-green-500", rating: 5 },
-  { value: "good", label: "Good", icon: Smile, color: "text-blue-500", rating: 4 },
-  { value: "okay", label: "Okay", icon: Meh, color: "text-yellow-500", rating: 3 },
-  { value: "struggling", label: "Struggling", icon: Frown, color: "text-orange-500", rating: 2 },
-  { value: "difficult", label: "Difficult", icon: Frown, color: "text-red-500", rating: 1 },
+// Mood options with enhanced descriptions
+const MOODS = [
+  {
+    value: 1,
+    emoji: "😢",
+    label: "Struggling",
+    color: "bg-red-100 text-red-800 border-red-200",
+    description: "Having a tough time",
+  },
+  {
+    value: 2,
+    emoji: "😕",
+    label: "Low",
+    color: "bg-orange-100 text-orange-800 border-orange-200",
+    description: "Feeling down",
+  },
+  {
+    value: 3,
+    emoji: "😐",
+    label: "Okay",
+    color: "bg-yellow-100 text-yellow-800 border-yellow-200",
+    description: "Getting by",
+  },
+  {
+    value: 4,
+    emoji: "🙂",
+    label: "Good",
+    color: "bg-blue-100 text-blue-800 border-blue-200",
+    description: "Feeling positive",
+  },
+  {
+    value: 5,
+    emoji: "😄",
+    label: "Great",
+    color: "bg-green-100 text-green-800 border-green-200",
+    description: "Thriving today",
+  },
 ]
 
-const MENTAL_HEALTH_RESOURCES = [
-  { id: "anxiety", label: "Anxiety Support", description: "Breathing exercises and coping strategies" },
-  { id: "depression", label: "Depression Resources", description: "Understanding and managing depression" },
-  { id: "stress", label: "Stress Management", description: "Techniques for reducing daily stress" },
-  { id: "sleep", label: "Sleep Hygiene", description: "Tips for better sleep quality" },
-  { id: "mindfulness", label: "Mindfulness", description: "Meditation and present-moment awareness" },
-  { id: "community", label: "Community Support", description: "Connect with others on similar journeys" },
-]
+// Mental health resources based on mood
+const MOOD_RESOURCES = {
+  1: [
+    { title: "Crisis Support", description: "24/7 helplines and immediate support", urgent: true },
+    { title: "Breathing Exercises", description: "Quick techniques to find calm" },
+    { title: "Grounding Techniques", description: "5-4-3-2-1 method and more" },
+  ],
+  2: [
+    { title: "Self-Compassion Guide", description: "Be kind to yourself today" },
+    { title: "Gentle Movement", description: "Light exercises to boost mood" },
+    { title: "Journaling Prompts", description: "Process your feelings safely" },
+  ],
+  3: [
+    { title: "Mindfulness Practices", description: "Stay present and centered" },
+    { title: "Gratitude Exercises", description: "Find small moments of joy" },
+    { title: "Connection Ideas", description: "Reach out to your support network" },
+  ],
+  4: [
+    { title: "Maintain Momentum", description: "Keep your positive energy flowing" },
+    { title: "Help Others", description: "Share your good vibes" },
+    { title: "Creative Expression", description: "Channel your energy into art" },
+  ],
+  5: [
+    { title: "Celebrate Yourself", description: "Acknowledge your growth" },
+    { title: "Spread Joy", description: "Be a light for others" },
+    { title: "Plan Ahead", description: "Set intentions for tomorrow" },
+  ],
+}
 
 export function EnhancedDailyCheckIn() {
-  const { user, isAuthenticated } = useAuth()
+  const { address, isConnected } = useWallet()
   const { toast } = useToast()
 
-  const [carePointsData, setCarePointsData] = useState<CarePointsData | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [showCheckInForm, setShowCheckInForm] = useState(false)
+  // Component state
+  const [selectedMood, setSelectedMood] = useState<number | null>(null)
+  const [gratitude, setGratitude] = useState("")
+  const [carePointsService, setCarePointsService] = useState<CarePointsService | null>(null)
+  const [carePointsData, setCarePointsData] = useState({
+    totalPoints: 0,
+    currentStreak: 0,
+    longestStreak: 0,
+    level: 1,
+    lastCheckIn: null as string | null,
+    checkInHistory: [],
+  })
+  const [showMoodSelector, setShowMoodSelector] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [showCelebration, setShowCelebration] = useState(false)
 
-  // Form state
-  const [selectedMood, setSelectedMood] = useState<string>("")
-  const [gratitudeNote, setGratitudeNote] = useState("")
-  const [selectedResources, setSelectedResources] = useState<string[]>([])
-
-  // Load user's CARE Points data
+  // Initialize CARE Points service
   useEffect(() => {
-    if (isAuthenticated && user) {
-      loadCarePointsData()
+    if (isConnected && address) {
+      const service = new CarePointsService(address)
+      setCarePointsService(service)
+      setCarePointsData(service.loadData())
     }
-  }, [isAuthenticated, user])
+  }, [isConnected, address])
 
-  const loadCarePointsData = async () => {
-    if (!user) return
-
-    try {
-      const data = await getUserCarePoints(user.id)
-      setCarePointsData(data)
-    } catch (error) {
-      console.error("Error loading CARE Points data:", error)
-    }
+  // Check if user can check in today
+  const canCheckInToday = () => {
+    return carePointsService?.canCheckInToday() ?? false
   }
 
-  const handleCheckIn = async () => {
-    if (!user || !selectedMood) return
+  // Handle mood selection
+  const handleMoodSelect = (mood: number) => {
+    setSelectedMood(mood)
+  }
 
-    setIsLoading(true)
+  // Handle check-in submission
+  const handleCheckIn = async () => {
+    if (!isConnected || !address || !carePointsService) {
+      toast({
+        title: "Wallet not connected",
+        description: "Please connect your wallet to check in",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!canCheckInToday()) {
+      toast({
+        title: "Already checked in",
+        description: "You've already checked in today. Come back tomorrow!",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (selectedMood === null) {
+      toast({
+        title: "Please select your mood",
+        description: "How are you feeling today?",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsSubmitting(true)
 
     try {
-      const moodOption = MOOD_OPTIONS.find((m) => m.value === selectedMood)
+      // Record check-in locally
+      const result = carePointsService.recordCheckIn(selectedMood, gratitude.trim() || undefined)
 
-      const updatedData = await recordCheckIn(user.id, {
-        mood: selectedMood,
-        gratitudeNote: gratitudeNote.trim() || undefined,
-        resourcesViewed: selectedResources,
-        moodRating: moodOption?.rating || 3,
-      })
+      if (!result.success) {
+        throw new Error("Failed to record check-in")
+      }
 
-      setCarePointsData(updatedData)
-      setShowCheckInForm(false)
+      // Update local state
+      setCarePointsData(carePointsService.loadData())
+
+      // Show celebration
       setShowCelebration(true)
+      setTimeout(() => setShowCelebration(false), 3000)
+
+      toast({
+        title: `🎉 Check-in complete! +${result.points} CARE Points`,
+        description: `${result.newStreak} day streak! Keep up the amazing work.`,
+      })
 
       // Reset form
-      setSelectedMood("")
-      setGratitudeNote("")
-      setSelectedResources([])
-
+      setSelectedMood(null)
+      setGratitude("")
+      setShowMoodSelector(false)
+    } catch (error) {
+      console.error("Check-in error:", error)
       toast({
-        title: "Check-in Complete! 🎉",
-        description: `You earned ${updatedData.checkInHistory[updatedData.checkInHistory.length - 1]?.points || 0} CARE Points!`,
-      })
-
-      // Hide celebration after 3 seconds
-      setTimeout(() => setShowCelebration(false), 3000)
-    } catch (error: any) {
-      toast({
-        title: "Check-in Failed",
-        description: error.message || "Please try again later",
+        title: "Check-in failed",
+        description: "Something went wrong. Please try again.",
         variant: "destructive",
       })
     } finally {
-      setIsLoading(false)
+      setIsSubmitting(false)
     }
   }
 
-  const toggleResource = (resourceId: string) => {
-    setSelectedResources((prev) =>
-      prev.includes(resourceId) ? prev.filter((id) => id !== resourceId) : [...prev, resourceId],
-    )
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <Card>
-        <CardContent className="pt-6 text-center">
-          <p className="text-muted-foreground mb-4">Sign in to start your daily reflection journey</p>
-          <Button className="bg-green-600 hover:bg-green-700">Sign In</Button>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (!carePointsData) {
-    return (
-      <Card>
-        <CardContent className="pt-6 text-center">
-          <div className="animate-pulse">Loading your progress...</div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const canCheckIn = canCheckInToday(carePointsData.lastCheckIn)
-  const progressToNextLevel = ((carePointsData.totalPoints % 100) / 100) * 100
+  // Get level progress
+  const levelProgress = getLevelProgress(carePointsData.totalPoints)
 
   return (
     <div className="space-y-6">
+      {/* Celebration Animation */}
+      {showCelebration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-lg p-8 text-center animate-bounce">
+            <div className="text-6xl mb-4">🎉</div>
+            <h2 className="text-2xl font-bold text-green-600 mb-2">Amazing!</h2>
+            <p className="text-gray-600">Your daily reflection has been recorded</p>
+          </div>
+        </div>
+      )}
+
       {/* Main Check-in Card */}
       <Card className="overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
           <div className="flex justify-between items-center">
             <CardTitle className="flex items-center gap-2">
-              <Heart className="h-5 w-5" />
+              <Calendar className="h-5 w-5" />
               Daily Reflection
             </CardTitle>
             <Badge variant="outline" className="bg-white/20 text-white border-none">
-              Level {carePointsData.level}
+              {carePointsData.currentStreak} Day Streak
             </Badge>
           </div>
-          <CardDescription className="text-white/80">Take a moment to reflect and earn CARE Points</CardDescription>
+          <CardDescription className="text-white/80">
+            Take a moment to reflect and earn CARE Points for your wellness journey
+          </CardDescription>
         </CardHeader>
-
-        <CardContent className="pt-6 space-y-4">
-          {/* Stats Row */}
-          <div className="grid grid-cols-3 gap-4">
+        <CardContent className="pt-6 space-y-6">
+          {/* Stats Overview */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center">
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <Star className="h-4 w-4 text-yellow-500" />
-                <span className="text-sm text-muted-foreground">Streak</span>
+              <div className="flex items-center justify-center gap-1 text-yellow-500 mb-1">
+                <Star className="h-4 w-4" />
+                <span className="text-2xl font-bold">{carePointsData.totalPoints}</span>
               </div>
-              <div className="text-2xl font-bold">{carePointsData.currentStreak}</div>
+              <span className="text-sm text-muted-foreground">CARE Points</span>
             </div>
             <div className="text-center">
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <Sparkles className="h-4 w-4 text-purple-500" />
-                <span className="text-sm text-muted-foreground">Points</span>
+              <div className="flex items-center justify-center gap-1 text-blue-500 mb-1">
+                <Target className="h-4 w-4" />
+                <span className="text-2xl font-bold">{carePointsData.level}</span>
               </div>
-              <div className="text-2xl font-bold">{carePointsData.totalPoints}</div>
+              <span className="text-sm text-muted-foreground">Level</span>
             </div>
             <div className="text-center">
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <Trophy className="h-4 w-4 text-orange-500" />
-                <span className="text-sm text-muted-foreground">Best</span>
+              <div className="flex items-center justify-center gap-1 text-green-500 mb-1">
+                <CheckCircle className="h-4 w-4" />
+                <span className="text-2xl font-bold">{carePointsData.currentStreak}</span>
               </div>
-              <div className="text-2xl font-bold">{carePointsData.longestStreak}</div>
+              <span className="text-sm text-muted-foreground">Current Streak</span>
+            </div>
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1 text-purple-500 mb-1">
+                <Trophy className="h-4 w-4" />
+                <span className="text-2xl font-bold">{carePointsData.longestStreak}</span>
+              </div>
+              <span className="text-sm text-muted-foreground">Best Streak</span>
             </div>
           </div>
 
           {/* Level Progress */}
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span>Level {carePointsData.level} Progress</span>
-              <span>
-                {carePointsData.totalPoints} / {carePointsData.nextLevelPoints}
-              </span>
+              <span>Level {levelProgress.current}</span>
+              <span>Level {levelProgress.next}</span>
             </div>
-            <Progress value={progressToNextLevel} className="h-2" />
+            <Progress value={levelProgress.progress} className="h-2" />
+            <p className="text-xs text-muted-foreground text-center">
+              {Math.round(levelProgress.progress)}% to next level
+            </p>
           </div>
-        </CardContent>
 
-        <CardFooter className="flex justify-center pb-6">
-          {canCheckIn ? (
-            <Button
-              onClick={() => setShowCheckInForm(true)}
-              className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
-              size="lg"
-            >
-              <Calendar className="mr-2 h-4 w-4" />
-              Start Daily Reflection
-            </Button>
-          ) : (
-            <div className="text-center">
-              <p className="text-muted-foreground mb-2">You've already reflected today!</p>
-              <p className="text-sm text-muted-foreground">Come back tomorrow to continue your journey</p>
+          {/* Check-in Interface */}
+          {!showMoodSelector ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="text-6xl mb-4">🌱</div>
+              <h3 className="text-lg font-medium mb-2">Ready for your daily reflection?</h3>
+              <p className="text-center text-muted-foreground mb-6">
+                Take a moment to check in with yourself and earn CARE Points
+              </p>
+              <Button
+                onClick={() => setShowMoodSelector(true)}
+                disabled={!canCheckInToday() || !isConnected}
+                className="w-full sm:w-auto"
+                size="lg"
+              >
+                {canCheckInToday() ? (
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4" />
+                    Start Daily Check-in
+                  </div>
+                ) : (
+                  "Already checked in today"
+                )}
+              </Button>
             </div>
-          )}
-        </CardFooter>
-      </Card>
-
-      {/* Check-in Form Modal */}
-      <AnimatePresence>
-        {showCheckInForm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-            onClick={() => setShowCheckInForm(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-xl font-semibold mb-4">Daily Reflection</h3>
-
+          ) : (
+            <div className="space-y-6">
               {/* Mood Selection */}
-              <div className="space-y-3 mb-6">
-                <label className="text-sm font-medium">How are you feeling today?</label>
-                <div className="grid grid-cols-1 gap-2">
-                  {MOOD_OPTIONS.map((mood) => {
-                    const Icon = mood.icon
-                    return (
-                      <button
-                        key={mood.value}
-                        onClick={() => setSelectedMood(mood.value)}
-                        className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                          selectedMood === mood.value
-                            ? "border-green-500 bg-green-50"
-                            : "border-gray-200 hover:border-gray-300"
-                        }`}
-                      >
-                        <Icon className={`h-5 w-5 ${mood.color}`} />
-                        <span className="font-medium">{mood.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Gratitude Note */}
-              <div className="space-y-2 mb-6">
-                <label className="text-sm font-medium">What are you grateful for today? (Optional)</label>
-                <Textarea
-                  value={gratitudeNote}
-                  onChange={(e) => setGratitudeNote(e.target.value)}
-                  placeholder="Share something you're grateful for..."
-                  className="min-h-[80px]"
-                />
-              </div>
-
-              {/* Resource Selection */}
-              <div className="space-y-3 mb-6">
-                <label className="text-sm font-medium">
-                  <BookOpen className="inline h-4 w-4 mr-1" />
-                  Interested in any resources? (Optional)
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                  {MENTAL_HEALTH_RESOURCES.map((resource) => (
+              <div className="space-y-4">
+                <h3 className="font-medium text-center">How are you feeling today?</h3>
+                <div className="grid grid-cols-5 gap-3">
+                  {MOODS.map((mood) => (
                     <button
-                      key={resource.id}
-                      onClick={() => toggleResource(resource.id)}
-                      className={`text-left p-3 rounded-lg border transition-colors ${
-                        selectedResources.includes(resource.id)
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
+                      key={mood.value}
+                      onClick={() => handleMoodSelect(mood.value)}
+                      className={`
+                        p-4 rounded-lg border-2 flex flex-col items-center justify-center transition-all hover:scale-105
+                        ${selectedMood === mood.value ? mood.color + " border-2 shadow-lg" : "border-gray-200 hover:border-gray-300"}
+                      `}
                     >
-                      <div className="font-medium">{resource.label}</div>
-                      <div className="text-sm text-muted-foreground">{resource.description}</div>
+                      <span className="text-3xl mb-2">{mood.emoji}</span>
+                      <span className="text-xs font-medium text-center">{mood.label}</span>
+                      <span className="text-xs text-center text-muted-foreground">{mood.description}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
+              {/* Resources based on mood */}
+              {selectedMood && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-medium text-blue-800 mb-3">Recommended for you today:</h4>
+                  <div className="space-y-2">
+                    {MOOD_RESOURCES[selectedMood as keyof typeof MOOD_RESOURCES].map((resource, index) => (
+                      <div
+                        key={index}
+                        className={`p-2 rounded ${resource.urgent ? "bg-red-100 border border-red-200" : "bg-white"}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {resource.urgent && <span className="text-red-500">🚨</span>}
+                          <div>
+                            <span className="font-medium text-sm">{resource.title}</span>
+                            <p className="text-xs text-muted-foreground">{resource.description}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Gratitude Section */}
+              <div className="space-y-3">
+                <Label htmlFor="gratitude" className="flex items-center gap-2">
+                  <Heart className="h-4 w-4 text-green-600" />
+                  What are you grateful for today? (Optional)
+                </Label>
+                <Textarea
+                  id="gratitude"
+                  placeholder="Today I'm grateful for... (This helps boost your mood and earns bonus points!)"
+                  value={gratitude}
+                  onChange={(e) => setGratitude(e.target.value)}
+                  className="min-h-[100px] resize-none"
+                  maxLength={300}
+                />
+                <div className="text-xs text-muted-foreground text-right">{gratitude.length}/300 characters</div>
+              </div>
+
               {/* Action Buttons */}
-              <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setShowCheckInForm(false)} className="flex-1">
-                  Cancel
-                </Button>
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
                 <Button
                   onClick={handleCheckIn}
-                  disabled={!selectedMood || isLoading}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  disabled={isSubmitting || selectedMood === null}
+                  className="flex-1"
+                  size="lg"
                 >
-                  {isLoading ? "Saving..." : "Complete Reflection"}
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Recording...
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      Complete Check-in (+
+                      {selectedMood
+                        ? 10 + Math.min(carePointsData.currentStreak * 2, 20) + (selectedMood >= 4 ? 5 : 0)
+                        : 10}{" "}
+                      points)
+                    </div>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowMoodSelector(false)
+                    setSelectedMood(null)
+                    setGratitude("")
+                  }}
+                  disabled={isSubmitting}
+                >
+                  Cancel
                 </Button>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Celebration Animation */}
-      <AnimatePresence>
-        {showCelebration && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="fixed inset-0 flex items-center justify-center pointer-events-none z-50"
-          >
-            <div className="bg-white rounded-lg p-8 shadow-lg text-center">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
-                className="text-6xl mb-4"
-              >
-                ✨
-              </motion.div>
-              <h3 className="text-xl font-semibold text-green-600 mb-2">Reflection Complete!</h3>
-              <p className="text-muted-foreground">Thank you for taking time to care for yourself</p>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

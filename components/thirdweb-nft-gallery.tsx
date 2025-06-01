@@ -14,6 +14,8 @@ interface NFTItem {
   name: string
   description: string
   image: string
+  date: string
+  mood?: number
 }
 
 export function ThirdwebNFTGallery() {
@@ -67,6 +69,8 @@ export function ThirdwebNFTGallery() {
           name: `Daily Reflection - ${entry.date}`,
           description: entry.reflection || "A daily reflection on the GOOD CARE Network",
           image: "/placeholder.svg?height=300&width=300&text=Reflection",
+          date: entry.date,
+          mood: entry.mood,
         }))
 
       setNfts(nftItems)
@@ -78,6 +82,11 @@ export function ThirdwebNFTGallery() {
     }
   }
 
+  const getMoodEmoji = (mood?: number) => {
+    const moodEmojis = ["", "😢", "😕", "😐", "🙂", "😄"]
+    return mood ? moodEmojis[mood] : "😐"
+  }
+
   if (!address) {
     return (
       <Card>
@@ -86,7 +95,7 @@ export function ThirdwebNFTGallery() {
             <Heart className="h-5 w-5 text-green-600" />
             Your Reflection NFTs
           </CardTitle>
-          <CardDescription>Connect your wallet to view your reflection NFT collection</CardDescription>
+          <CardDescription>Connect your wallet to view your reflection collection</CardDescription>
         </CardHeader>
       </Card>
     )
@@ -100,7 +109,7 @@ export function ThirdwebNFTGallery() {
             <Heart className="h-5 w-5 text-green-600" />
             Your Reflection NFTs
           </CardTitle>
-          <CardDescription>Loading your NFT collection...</CardDescription>
+          <CardDescription>Loading your reflection collection...</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -124,14 +133,14 @@ export function ThirdwebNFTGallery() {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Heart className="h-5 w-5 text-green-600" />
-              Your Reflection NFTs
+              Your Reflection Collection
             </CardTitle>
             <CardDescription>
-              {nfts.length} reflection{nfts.length !== 1 ? "s" : ""} minted on the GOOD CARE Network
+              {nfts.length} reflection{nfts.length !== 1 ? "s" : ""} recorded on your wellness journey
             </CardDescription>
           </div>
           <Badge variant="outline" className="text-green-600 border-green-600">
-            {nfts.length} NFTs
+            {nfts.length} Reflections
           </Badge>
         </div>
       </CardHeader>
@@ -139,18 +148,19 @@ export function ThirdwebNFTGallery() {
         {nfts.length === 0 ? (
           <div className="text-center py-8">
             <div className="text-6xl mb-4">🎨</div>
-            <h3 className="text-lg font-medium mb-2">No reflection NFTs yet</h3>
-            <p className="text-muted-foreground mb-4">
-              Start your daily reflection journey to mint your first NFT on the blockchain
-            </p>
+            <h3 className="text-lg font-medium mb-2">No reflections yet</h3>
+            <p className="text-muted-foreground mb-4">Start your daily reflection journey to build your collection</p>
             <Button variant="outline">Start Daily Check-in</Button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {nfts.map((nft) => (
               <Card key={nft.id} className="overflow-hidden">
-                <div className="aspect-square relative">
-                  <img src={nft.image || "/placeholder.svg"} alt={nft.name} className="w-full h-full object-cover" />
+                <div className="aspect-square relative bg-gradient-to-br from-green-100 to-blue-100 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-6xl mb-2">{getMoodEmoji(nft.mood)}</div>
+                    <div className="text-sm text-muted-foreground">{nft.date}</div>
+                  </div>
                   <div className="absolute top-2 right-2">
                     <Badge variant="secondary" className="bg-white/90 text-black">
                       #{nft.tokenId}

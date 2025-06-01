@@ -1,45 +1,38 @@
-// CARE Daily Reflections NFT contract address
-export const REFLECTION_NFT_CONTRACT = "0x141b77a109011475A4c347fD19Dd4ead79AE912F"
+// Simplified reflection minting for MVP (no actual blockchain calls)
 
-// Interface for reflection metadata
+export const REFLECTION_NFT_CONTRACT = "0xC28Bd1D69E390beF1547a63Fa705618C41F3B813"
+
 export interface ReflectionMetadata {
   name: string
   description: string
   image: string
-  attributes: {
+  attributes: Array<{
     trait_type: string
     value: string | number
-  }[]
-  mood: number
-  reflection_text?: string
-  date: string
-  streak: number
-  check_in_number: number
+  }>
+  properties: {
+    mood: number
+    journal: string
+    streak: number
+    date: string
+    wallet: string
+  }
 }
 
-// Interface for minting result
-export interface MintingResult {
-  success: boolean
-  tokenId?: string
-  txHash?: string
-  error?: string
-}
-
-// Create metadata for reflection NFT
 export function createReflectionMetadata(
   mood: number,
-  reflectionText: string | undefined,
-  date: string,
-  streak: number,
-  checkInNumber: number,
+  reflection?: string,
+  date?: string,
+  streak?: number,
+  checkInNumber?: number,
 ): ReflectionMetadata {
-  const moodEmojis = ["", "😢", "😕", "😐", "🙂", "😄"]
+  const today = date || new Date().toISOString().split("T")[0]
   const moodLabels = ["", "Very Upset", "Somewhat Upset", "Neutral", "Somewhat Happy", "Very Happy"]
 
   return {
-    name: `Daily Reflection #${checkInNumber}`,
-    description: `A daily reflection from ${date} capturing mood and thoughts on the GOOD CARE journey. Mood: ${moodLabels[mood]} (${mood}/5). ${reflectionText ? `Reflection: "${reflectionText}"` : "No written reflection."}`,
-    image: "ipfs://QmXRna91Fhh7MR1AErjRfpXMM9DnxTJ8eqjVtqxyBxVNu3/0.png", // Official CARE reflection badge
+    name: `Daily Reflection – ${today}`,
+    description: `A daily reflection from ${today} capturing mood and thoughts on the GOOD CARE journey. Mood: ${moodLabels[mood]} (${mood}/5). ${reflection ? `Reflection: "${reflection}"` : "No written reflection."}`,
+    image: "ipfs://QmXRna91Fhh7MR1AErjRfpXMM9DnxTJ8eqjVtqxyBxVNu3/0.png",
     attributes: [
       {
         trait_type: "Mood",
@@ -51,89 +44,51 @@ export function createReflectionMetadata(
       },
       {
         trait_type: "Date",
-        value: date,
+        value: today,
       },
       {
         trait_type: "Streak",
-        value: streak,
-      },
-      {
-        trait_type: "Check-in Number",
-        value: checkInNumber,
+        value: streak || 1,
       },
       {
         trait_type: "Has Reflection",
-        value: reflectionText ? "Yes" : "No",
+        value: reflection ? "Yes" : "No",
       },
       {
         trait_type: "Reflection Length",
-        value: reflectionText ? reflectionText.length : 0,
+        value: reflection ? reflection.length : 0,
       },
     ],
-    mood,
-    reflection_text: reflectionText,
-    date,
-    streak,
-    check_in_number: checkInNumber,
+    properties: {
+      mood,
+      journal: reflection || "",
+      streak: streak || 1,
+      date: today,
+      wallet: "",
+    },
   }
 }
 
-// Mint reflection via API - main function for frontend integration
-export async function mintReflectionViaAPI(
-  mood: number,
-  journal: string | undefined,
-  streak: number,
-  address: string,
-): Promise<MintingResult> {
-  try {
-    console.log("Calling mint-reflection API with:", { mood, journal, streak, address })
-
-    const response = await fetch("/api/mint-reflection", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        mood,
-        journal: journal || "",
-        streak,
-        address,
-      }),
-    })
-
-    console.log("API response status:", response.status)
-    const result = await response.json()
-    console.log("API response body:", result)
-
-    if (response.ok && result.success) {
-      return {
-        success: true,
-        tokenId: result.tokenId,
-        txHash: result.transactionHash,
-      }
-    } else {
-      return {
-        success: false,
-        error: result.error || "Unable to mint your reflection right now. Please try again in a moment.",
-      }
-    }
-  } catch (error) {
-    console.error("API mint error:", error)
-    return {
-      success: false,
-      error: "Network error. Please check your connection and try again.",
-    }
+export async function estimateGasCostInCARE(): Promise<{
+  gasCostInCARE: string
+  gasCostInWei: string
+}> {
+  // Mock gas estimation for MVP
+  return {
+    gasCostInCARE: "0.003",
+    gasCostInWei: "3000000000000000", // 0.003 ETH in wei
   }
 }
 
-// Legacy function for backward compatibility
-export async function mintReflectionNFT(
-  mood: number,
-  reflectionText: string | undefined,
-  date: string,
-  streak: number,
-  checkInNumber: number,
-): Promise<MintingResult> {
-  // Redirect to new API-based minting
-  return mintReflectionViaAPI(mood, reflectionText, streak, "")
+export async function checkSufficientBalance(address: string): Promise<{
+  sufficient: boolean
+  balance: string
+  required: string
+}> {
+  // Mock balance check for MVP
+  return {
+    sufficient: true,
+    balance: "0.05",
+    required: "0.003",
+  }
 }

@@ -3,157 +3,168 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Trophy, Medal, Award, Star, TrendingUp } from "lucide-react"
-import { getLeaderboard, type LeaderboardEntry } from "@/lib/care-points-service"
-import { useAuth } from "@/providers/auth-provider"
+import { Trophy, Star, TrendingUp, Users } from "lucide-react"
+import { useWallet } from "@/providers/wallet-provider"
+import { getMockLeaderboard, CarePointsService, type LeaderboardEntry } from "@/lib/care-points-service"
 
 export function CareLeaderboard() {
-  const { user } = useAuth()
+  const { address, isConnected } = useWallet()
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [userRank, setUserRank] = useState<number | null>(null)
+  const [userEntry, setUserEntry] = useState<LeaderboardEntry | null>(null)
 
   useEffect(() => {
-    loadLeaderboard()
-  }, [])
+    // Load mock leaderboard data
+    const mockData = getMockLeaderboard()
 
-  const loadLeaderboard = async () => {
-    try {
-      const data = await getLeaderboard(10)
-      setLeaderboard(data)
+    // If user is connected, add their data to the leaderboard
+    if (isConnected && address) {
+      const carePointsService = new CarePointsService(address)
+      const userData = carePointsService.loadData()
 
-      // Find current user's rank
-      if (user) {
-        const userEntry = data.find((entry) => entry.userId === user.id)
-        setUserRank(userEntry?.rank || null)
+      const userLeaderboardEntry: LeaderboardEntry = {
+        address,
+        username: `User_${address.slice(-4)}`,
+        totalPoints: userData.totalPoints,
+        currentStreak: userData.currentStreak,
+        level: userData.level,
+        avatar: "🌟",
       }
-    } catch (error) {
-      console.error("Error loading leaderboard:", error)
-    } finally {
-      setIsLoading(false)
+
+      // Combine user data with mock data and sort
+      const combinedData = [...mockData, userLeaderboardEntry].sort((a, b) => b.totalPoints - a.totalPoints)
+
+      setLeaderboard(combinedData)
+
+      // Find user's rank
+      const rank = combinedData.findIndex((entry) => entry.address === address) + 1
+      setUserRank(rank)
+      setUserEntry(userLeaderboardEntry)
+    } else {
+      setLeaderboard(mockData)
+      setUserRank(null)
+      setUserEntry(null)
     }
-  }
+  }, [isConnected, address])
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1:
-        return <Trophy className="h-5 w-5 text-yellow-500" />
+        return "🥇"
       case 2:
-        return <Medal className="h-5 w-5 text-gray-400" />
+        return "🥈"
       case 3:
-        return <Award className="h-5 w-5 text-amber-600" />
+        return "🥉"
       default:
-        return <span className="text-sm font-bold text-muted-foreground">#{rank}</span>
+        return `#${rank}`
     }
   }
 
-  const getRankBadgeColor = (rank: number) => {
+  const getRankColor = (rank: number) => {
     switch (rank) {
       case 1:
-        return "bg-gradient-to-r from-yellow-400 to-yellow-600"
+        return "text-yellow-600 bg-yellow-50 border-yellow-200"
       case 2:
-        return "bg-gradient-to-r from-gray-300 to-gray-500"
+        return "text-gray-600 bg-gray-50 border-gray-200"
       case 3:
-        return "bg-gradient-to-r from-amber-400 to-amber-600"
+        return "text-orange-600 bg-orange-50 border-orange-200"
       default:
-        return "bg-gradient-to-r from-blue-400 to-blue-600"
+        return "text-blue-600 bg-blue-50 border-blue-200"
     }
-  }
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            Community Leaderboard
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 rounded-lg animate-pulse">
-                <div className="w-8 h-8 bg-gray-200 rounded-full" />
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-24 mb-1" />
-                  <div className="h-3 bg-gray-200 rounded w-16" />
-                </div>
-                <div className="h-6 bg-gray-200 rounded w-12" />
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    )
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          Community Leaderboard
-        </CardTitle>
-        <CardDescription>
-          Top community members by CARE Points
-          {userRank && <span className="block mt-1 text-green-600 font-medium">You're ranked #{userRank}! 🎉</span>}
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-yellow-500" />
+              Community Leaderboard
+            </CardTitle>
+            <CardDescription>See how you rank among fellow wellness warriors</CardDescription>
+          </div>
+          <Badge variant="outline" className="flex items-center gap-1">
+            <Users className="h-3 w-3" />
+            {leaderboard.length} members
+          </Badge>
+        </div>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {leaderboard.map((entry, index) => (
-            <div
-              key={entry.userId}
-              className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                entry.userId === user?.id ? "bg-green-50 border border-green-200" : "hover:bg-gray-50"
-              }`}
-            >
-              {/* Rank */}
-              <div className="flex items-center justify-center w-8 h-8">{getRankIcon(entry.rank)}</div>
-
-              {/* Avatar */}
-              <Avatar className="h-10 w-10">
-                <AvatarFallback className={getRankBadgeColor(entry.rank)}>
-                  {entry.username.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-
-              {/* User Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium truncate">{entry.username}</p>
-                  {entry.userId === user?.id && (
-                    <Badge variant="outline" className="text-xs">
-                      You
-                    </Badge>
-                  )}
+      <CardContent className="space-y-4">
+        {/* User's Current Rank (if connected) */}
+        {userRank && userEntry && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border ${getRankColor(userRank)}`}
+                >
+                  {getRankIcon(userRank)}
                 </div>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Star className="h-3 w-3" />
-                    {entry.currentStreak} day streak
-                  </span>
-                  <span>Level {entry.level}</span>
+                <div>
+                  <p className="font-medium">Your Rank</p>
+                  <p className="text-sm text-muted-foreground">
+                    {userEntry.totalPoints} CARE Points • Level {userEntry.level}
+                  </p>
                 </div>
               </div>
-
-              {/* Points */}
               <div className="text-right">
-                <div className="font-bold text-lg">{entry.totalPoints}</div>
-                <div className="text-xs text-muted-foreground">CARE Points</div>
+                <div className="flex items-center gap-1 text-green-600">
+                  <TrendingUp className="h-4 w-4" />
+                  <span className="font-medium">{userEntry.currentStreak} day streak</span>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
-
-        {leaderboard.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
-            <TrendingUp className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>No one has started their journey yet.</p>
-            <p className="text-sm">Be the first to check in!</p>
           </div>
         )}
+
+        {/* Leaderboard List */}
+        <div className="space-y-2">
+          {leaderboard.slice(0, 10).map((entry, index) => {
+            const rank = index + 1
+            const isCurrentUser = entry.address === address
+
+            return (
+              <div
+                key={entry.address}
+                className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                  isCurrentUser ? "bg-green-50 border-green-200" : "bg-white border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border ${getRankColor(rank)}`}
+                  >
+                    {getRankIcon(rank)}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{entry.avatar}</span>
+                    <div>
+                      <p className="font-medium">
+                        {entry.username}
+                        {isCurrentUser && <span className="text-green-600 ml-1">(You)</span>}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Level {entry.level}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="flex items-center gap-1 text-yellow-600 mb-1">
+                    <Star className="h-3 w-3" />
+                    <span className="font-medium">{entry.totalPoints}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{entry.currentStreak} day streak</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Encouragement Message */}
+        <div className="text-center pt-4 border-t">
+          <p className="text-sm text-muted-foreground">Keep checking in daily to climb the leaderboard! 🌱</p>
+        </div>
       </CardContent>
     </Card>
   )
