@@ -2,8 +2,8 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
-import { EnhancedAuthService, type AuthUser } from "@/lib/enhanced-auth-service"
-import { OnboardingFlow } from "@/components/auth/onboarding-flow"
+import { SimpleAuthService, type AuthUser } from "@/lib/simple-auth-service"
+import { WorkingLoginForm } from "@/components/auth/working-login-form"
 
 interface EnhancedAuthContextType {
   user: AuthUser | null
@@ -26,19 +26,21 @@ export function EnhancedAuthProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
-  const authService = new EnhancedAuthService()
-
   useEffect(() => {
     checkExistingAuth()
   }, [])
 
   const checkExistingAuth = async () => {
     try {
-      // Check localStorage for existing session
-      const savedUser = localStorage.getItem("goodcare_user")
-      if (savedUser) {
-        const userData = JSON.parse(savedUser) as AuthUser
-        setUser(userData)
+      const result = await SimpleAuthService.getCurrentUser()
+
+      if (result.success && result.user) {
+        if (result.requiresUsername) {
+          // User needs to complete onboarding
+          setShowOnboarding(true)
+        } else {
+          setUser(result.user)
+        }
       } else {
         setShowOnboarding(true)
       }
@@ -53,21 +55,18 @@ export function EnhancedAuthProvider({ children }: { children: React.ReactNode }
   const handleAuthComplete = (authUser: AuthUser) => {
     setUser(authUser)
     setShowOnboarding(false)
-
-    // Save to localStorage
-    localStorage.setItem("goodcare_user", JSON.stringify(authUser))
   }
 
-  const logout = () => {
+  const logout = async () => {
+    await SimpleAuthService.signOut()
     setUser(null)
     setShowOnboarding(true)
-    localStorage.removeItem("goodcare_user")
   }
 
   const refreshUser = async () => {
-    // Refresh user data from database if needed
-    if (user) {
-      // Could implement user data refresh here
+    const result = await SimpleAuthService.getCurrentUser()
+    if (result.success && result.user && !result.requiresUsername) {
+      setUser(result.user)
     }
   }
 
@@ -93,7 +92,7 @@ export function EnhancedAuthProvider({ children }: { children: React.ReactNode }
   if (showOnboarding) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-green-50 to-blue-50">
-        <OnboardingFlow onAuthComplete={handleAuthComplete} />
+        <WorkingLoginForm onAuthComplete={handleAuthComplete} />
       </div>
     )
   }
