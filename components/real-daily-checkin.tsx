@@ -4,12 +4,13 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { useToast } from "@/hooks/use-toast"
+import { Badge } from "@/components/ui/badge"
 import { useRealAuth } from "@/providers/real-auth-provider"
 import { RealSupabaseService } from "@/lib/real-supabase-service"
-import { Loader2, Heart, Flame, Star } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { Heart, Loader2, CheckCircle } from "lucide-react"
 
-const moodOptions = [
+const MOOD_OPTIONS = [
   { value: 1, label: "Struggling", emoji: "😔", color: "bg-red-100 text-red-800" },
   { value: 2, label: "Low", emoji: "😕", color: "bg-orange-100 text-orange-800" },
   { value: 3, label: "Okay", emoji: "😐", color: "bg-yellow-100 text-yellow-800" },
@@ -26,36 +27,21 @@ export function RealDailyCheckIn() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [canCheckIn, setCanCheckIn] = useState(true)
   const [isLoading, setIsLoading] = useState(true)
-  const [userStats, setUserStats] = useState<any>(null)
 
   useEffect(() => {
-    if (user) {
-      checkCanCheckIn()
-      loadUserStats()
-    }
+    checkIfCanCheckIn()
   }, [user])
 
-  const checkCanCheckIn = async () => {
+  const checkIfCanCheckIn = async () => {
     if (!user) return
 
     try {
       const canCheck = await RealSupabaseService.canCheckInToday(user.id)
       setCanCheckIn(canCheck)
     } catch (error) {
-      console.error("Error checking check-in status:", error)
+      console.error("Error checking if can check in:", error)
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const loadUserStats = async () => {
-    if (!user) return
-
-    try {
-      const stats = await RealSupabaseService.getUserStats(user.id)
-      setUserStats(stats)
-    } catch (error) {
-      console.error("Error loading user stats:", error)
     }
   }
 
@@ -65,11 +51,13 @@ export function RealDailyCheckIn() {
     setIsSubmitting(true)
 
     try {
-      const selectedMoodData = moodOptions.find((m) => m.value === selectedMood)
+      const moodOption = MOOD_OPTIONS.find((m) => m.value === selectedMood)
+      if (!moodOption) return
+
       const result = await RealSupabaseService.recordCheckIn(
         user.id,
         selectedMood,
-        selectedMoodData?.label || "Unknown",
+        moodOption.label,
         gratitudeNote || undefined,
         [],
       )
@@ -80,17 +68,13 @@ export function RealDailyCheckIn() {
           description: `You earned ${result.points} CARE Points! Current streak: ${result.newStreak} days`,
         })
 
-        // Reset form
+        setCanCheckIn(false)
         setSelectedMood(null)
         setGratitudeNote("")
-        setCanCheckIn(false)
-
-        // Reload stats
-        await loadUserStats()
       } else {
         toast({
           title: "Check-in failed",
-          description: result.error || "Something went wrong. Please try again.",
+          description: result.error || "Something went wrong",
           variant: "destructive",
         })
       }
@@ -109,8 +93,7 @@ export function RealDailyCheckIn() {
     return (
       <Card>
         <CardContent className="flex items-center justify-center p-8">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          <span>Loading check-in...</span>
+          <Loader2 className="h-6 w-6 animate-spin" />
         </CardContent>
       </Card>
     )
@@ -120,32 +103,16 @@ export function RealDailyCheckIn() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">✅ Daily Check-in Complete</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 text-green-500" />
+            Daily Check-in Complete
+          </CardTitle>
           <CardDescription>You've already checked in today! Come back tomorrow for your next check-in.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center gap-2 p-4 bg-green-50 rounded-lg">
-              <Heart className="h-5 w-5 text-green-600" />
-              <div>
-                <p className="font-medium">Total Points</p>
-                <p className="text-2xl font-bold text-green-600">{userStats?.total_points || 0}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 p-4 bg-orange-50 rounded-lg">
-              <Flame className="h-5 w-5 text-orange-600" />
-              <div>
-                <p className="font-medium">Current Streak</p>
-                <p className="text-2xl font-bold text-orange-600">{userStats?.current_streak || 0}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 p-4 bg-blue-50 rounded-lg">
-              <Star className="h-5 w-5 text-blue-600" />
-              <div>
-                <p className="font-medium">Level</p>
-                <p className="text-2xl font-bold text-blue-600">{userStats?.level || 1}</p>
-              </div>
-            </div>
+          <div className="text-center py-4">
+            <div className="text-4xl mb-2">✅</div>
+            <p className="text-muted-foreground">Great job staying consistent with your wellness journey!</p>
           </div>
         </CardContent>
       </Card>
@@ -155,20 +122,23 @@ export function RealDailyCheckIn() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">🌱 Daily Wellness Check-in</CardTitle>
-        <CardDescription>Take a moment to reflect on your day and track your wellness journey</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Heart className="h-5 w-5 text-red-500" />
+          Daily Check-in
+        </CardTitle>
+        <CardDescription>How are you feeling today? Track your mood and earn CARE Points.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Mood Selection */}
         <div className="space-y-3">
           <label className="text-sm font-medium">How are you feeling today?</label>
           <div className="grid grid-cols-5 gap-2">
-            {moodOptions.map((mood) => (
+            {MOOD_OPTIONS.map((mood) => (
               <button
                 key={mood.value}
                 onClick={() => setSelectedMood(mood.value)}
-                className={`p-3 rounded-lg border-2 transition-all text-center ${
-                  selectedMood === mood.value ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                className={`p-3 rounded-lg border-2 transition-all ${
+                  selectedMood === mood.value ? "border-primary bg-primary/10" : "border-gray-200 hover:border-gray-300"
                 }`}
               >
                 <div className="text-2xl mb-1">{mood.emoji}</div>
@@ -176,60 +146,26 @@ export function RealDailyCheckIn() {
               </button>
             ))}
           </div>
+          {selectedMood && (
+            <Badge className={MOOD_OPTIONS.find((m) => m.value === selectedMood)?.color}>
+              {MOOD_OPTIONS.find((m) => m.value === selectedMood)?.label}
+            </Badge>
+          )}
         </div>
 
         {/* Gratitude Note */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <label className="text-sm font-medium">What are you grateful for today? (Optional)</label>
           <Textarea
-            placeholder="Share something you're grateful for..."
+            placeholder="I'm grateful for..."
             value={gratitudeNote}
             onChange={(e) => setGratitudeNote(e.target.value)}
-            className="min-h-[100px]"
+            className="min-h-[80px]"
           />
         </div>
 
-        {/* Points Preview */}
-        {selectedMood && (
-          <div className="p-4 bg-green-50 rounded-lg">
-            <h4 className="font-medium text-green-800 mb-2">Points Preview:</h4>
-            <div className="space-y-1 text-sm text-green-700">
-              <div className="flex justify-between">
-                <span>Base check-in points:</span>
-                <span>+10</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Streak bonus:</span>
-                <span>+{Math.min(((userStats?.current_streak || 0) + 1) * 2, 20)}</span>
-              </div>
-              {selectedMood >= 4 && (
-                <div className="flex justify-between">
-                  <span>Positive mood bonus:</span>
-                  <span>+5</span>
-                </div>
-              )}
-              {gratitudeNote && (
-                <div className="flex justify-between">
-                  <span>Gratitude bonus:</span>
-                  <span>+3</span>
-                </div>
-              )}
-              <div className="border-t pt-1 flex justify-between font-medium">
-                <span>Total:</span>
-                <span>
-                  +
-                  {10 +
-                    Math.min(((userStats?.current_streak || 0) + 1) * 2, 20) +
-                    (selectedMood >= 4 ? 5 : 0) +
-                    (gratitudeNote ? 3 : 0)}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Submit Button */}
-        <Button onClick={handleSubmit} disabled={!selectedMood || isSubmitting} className="w-full" size="lg">
+        <Button onClick={handleSubmit} disabled={!selectedMood || isSubmitting} className="w-full">
           {isSubmitting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -151,7 +151,7 @@ export class RealSupabaseService {
       const today = new Date().toISOString().split("T")[0]
 
       const { data, error } = await supabase
-        .from("checkins")
+        .from("daily_checkins")
         .select("id")
         .eq("user_id", userId)
         .eq("date", today)
@@ -208,7 +208,7 @@ export class RealSupabaseService {
 
       // Insert check-in
       const { data: checkIn, error: checkInError } = await supabase
-        .from("checkins")
+        .from("daily_checkins")
         .insert({
           user_id: userId,
           date: today,
@@ -265,7 +265,7 @@ export class RealSupabaseService {
   static async getUserCheckIns(userId: string, limit = 30): Promise<CheckIn[]> {
     try {
       const { data, error } = await supabase
-        .from("checkins")
+        .from("daily_checkins")
         .select("*")
         .eq("user_id", userId)
         .order("date", { ascending: false })

@@ -3,10 +3,9 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useRealAuth } from "@/providers/real-auth-provider"
 import { RealSupabaseService, type LeaderboardEntry } from "@/lib/real-supabase-service"
-import { Trophy, Medal, Award, Loader2 } from "lucide-react"
+import { useRealAuth } from "@/providers/real-auth-provider"
+import { Trophy, Users, Loader2, Medal, Award } from "lucide-react"
 
 export function RealLeaderboard() {
   const { user } = useRealAuth()
@@ -41,25 +40,30 @@ export function RealLeaderboard() {
     }
   }
 
-  const getRankBadge = (rank: number) => {
+  const getRankColor = (rank: number) => {
     switch (rank) {
       case 1:
-        return <Badge className="bg-yellow-100 text-yellow-800">🥇 Champion</Badge>
+        return "bg-yellow-50 border-yellow-200"
       case 2:
-        return <Badge className="bg-gray-100 text-gray-800">🥈 Runner-up</Badge>
+        return "bg-gray-50 border-gray-200"
       case 3:
-        return <Badge className="bg-amber-100 text-amber-800">🥉 Third Place</Badge>
+        return "bg-amber-50 border-amber-200"
       default:
-        return null
+        return "bg-white border-gray-200"
     }
   }
 
   if (isLoading) {
     return (
       <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Community Leaderboard
+          </CardTitle>
+        </CardHeader>
         <CardContent className="flex items-center justify-center p-8">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          <span>Loading leaderboard...</span>
+          <Loader2 className="h-6 w-6 animate-spin" />
         </CardContent>
       </Card>
     )
@@ -68,45 +72,49 @@ export function RealLeaderboard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">🏆 Community Leaderboard</CardTitle>
-        <CardDescription>See how you rank among fellow wellness warriors</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="h-5 w-5" />
+          Community Leaderboard
+        </CardTitle>
+        <CardDescription>See how you rank among the GOOD CARE community</CardDescription>
       </CardHeader>
       <CardContent>
         {leaderboard.length === 0 ? (
           <div className="text-center py-8">
+            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">No community members yet. Be the first to check in!</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {leaderboard.map((entry) => (
               <div
                 key={entry.user_id}
-                className={`flex items-center gap-4 p-4 rounded-lg border ${
-                  entry.user_id === user?.id ? "bg-blue-50 border-blue-200" : "bg-white"
+                className={`p-4 rounded-lg border-2 ${getRankColor(entry.rank)} ${
+                  entry.user_id === user?.id ? "ring-2 ring-primary" : ""
                 }`}
               >
-                <div className="flex items-center justify-center w-8">{getRankIcon(entry.rank)}</div>
-
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${entry.username}`} />
-                  <AvatarFallback>{entry.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium">{entry.username}</p>
-                    {entry.user_id === user?.id && <Badge variant="outline">You</Badge>}
-                    {getRankBadge(entry.rank)}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center w-8 h-8">{getRankIcon(entry.rank)}</div>
+                    <div>
+                      <p className="font-medium">
+                        {entry.username}
+                        {entry.user_id === user?.id && (
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            You
+                          </Badge>
+                        )}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Level {entry.level}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>Level {entry.level}</span>
-                    <span>🔥 {entry.current_streak} day streak</span>
+                  <div className="text-right">
+                    <p className="font-bold text-lg">{entry.total_points}</p>
+                    <p className="text-xs text-muted-foreground">CARE Points</p>
                   </div>
                 </div>
-
-                <div className="text-right">
-                  <p className="text-lg font-bold text-green-600">{entry.total_points}</p>
-                  <p className="text-xs text-muted-foreground">CARE Points</p>
+                <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
+                  <span>🔥 {entry.current_streak} day streak</span>
                 </div>
               </div>
             ))}
