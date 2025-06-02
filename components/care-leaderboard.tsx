@@ -4,18 +4,18 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Trophy, Star, TrendingUp, Users, Loader2 } from "lucide-react"
-import { useWallet } from "@/providers/wallet-provider"
+import { useEnhancedAuth } from "@/providers/enhanced-auth-provider"
 import { getLeaderboard, type LeaderboardEntry } from "@/lib/supabase-care-service"
 
 export function CareLeaderboard() {
-  const { address, isConnected } = useWallet()
+  const { user, isAuthenticated } = useEnhancedAuth()
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [userRank, setUserRank] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     loadLeaderboard()
-  }, [address])
+  }, [user])
 
   const loadLeaderboard = async () => {
     try {
@@ -24,8 +24,8 @@ export function CareLeaderboard() {
       setLeaderboard(data)
 
       // Find current user's rank
-      if (address) {
-        const userEntry = data.find((entry) => entry.userId === address)
+      if (user) {
+        const userEntry = data.find((entry) => entry.userId === user.id)
         setUserRank(userEntry?.rank || null)
       }
     } catch (error) {
@@ -100,7 +100,7 @@ export function CareLeaderboard() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* User's Current Rank (if connected and ranked) */}
-        {userRank && isConnected && (
+        {userRank && isAuthenticated && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -127,7 +127,7 @@ export function CareLeaderboard() {
         {/* Leaderboard List */}
         <div className="space-y-2">
           {leaderboard.map((entry) => {
-            const isCurrentUser = entry.userId === address
+            const isCurrentUser = entry.userId === user?.id
 
             return (
               <div

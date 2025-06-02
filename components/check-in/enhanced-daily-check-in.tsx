@@ -5,12 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Calendar, CheckCircle, Star, Heart, Loader2, Sparkles, Trophy, Target } from "lucide-react"
+import { Calendar, CheckCircle, Star, Heart, Loader2, Sparkles, Trophy, Target, Wifi, WifiOff } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { useWallet } from "@/providers/wallet-provider"
 import { useToast } from "@/hooks/use-toast"
 import { SupabaseCareService, getLevelProgress, type CarePointsData } from "@/lib/supabase-care-service"
+import { useEnhancedAuth } from "@/providers/enhanced-auth-provider"
+import { DatabaseService } from "@/lib/database-service"
 
 // Mood options with enhanced descriptions
 const MOODS = [
@@ -81,8 +82,8 @@ const MOOD_RESOURCES = {
 }
 
 export function EnhancedDailyCheckIn() {
-  const { address, isConnected } = useWallet()
   const { toast } = useToast()
+  const { user, isAuthenticated } = useEnhancedAuth()
 
   // Component state
   const [selectedMood, setSelectedMood] = useState<number | null>(null)
@@ -103,42 +104,60 @@ export function EnhancedDailyCheckIn() {
   const [showCelebration, setShowCelebration] = useState(false)
   const [canCheckIn, setCanCheckIn] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [isOnline, setIsOnline] = useState<boolean | null>(null)
 
   // Initialize service and load data
   useEffect(() => {
-    if (isConnected && address) {
+    if (isAuthenticated && user) {
       initializeService()
     } else {
       setIsLoading(false)
     }
-  }, [isConnected, address])
+  }, [isAuthenticated, user])
 
   const initializeService = async () => {
-    if (!address) return
+    if (!user) return
 
     try {
       setIsLoading(true)
-      const service = new SupabaseCareService(address)
 
-      // Initialize user in database
-      await service.initializeUser(address)
+      // Check database connectivity
+      const dbOnline = await DatabaseService.checkConnection()
+      setIsOnline(dbOnline)
 
+      const service = new SupabaseCareService(user.id)
       setCareService(service)
 
-      // Load data
+      // Initialize user (this will work offline too)
+      await service.initializeUser(user.walletAddress || user.id, user.email)
+
+      // Load data (this will use fallback if needed)
       const data = await service.loadData()
       setCarePointsData(data)
 
       // Check if can check in today
       const canCheck = await service.canCheckInToday()
       setCanCheckIn(canCheck)
+
+      if (!dbOnline) {
+        toast({
+          title: "Working Offline",
+          description: "Your data is being saved locally and will sync when connection is restored.",
+          variant: "default",
+        })
+      }
     } catch (error) {
       console.error("Error initializing service:", error)
       toast({
-        title: "Connection Error",
-        description: "Failed to load your data. Please try again.",
-        variant: "destructive",
+        title: "Initialization Complete",
+        description: "Working in offline mode. Your progress will be saved locally.",
+        variant: "default",
       })
+
+      // Even if there's an error, we can still work offline
+      const service = new SupabaseCareService(user.id)
+      setCareService(service)
+      setCanCheckIn(true)
     } finally {
       setIsLoading(false)
     }
@@ -158,10 +177,10 @@ export function EnhancedDailyCheckIn() {
 
   // Handle check-in submission
   const handleCheckIn = async () => {
-    if (!isConnected || !address || !careService) {
+    if (!isAuthenticated || !user || !careService) {
       toast({
-        title: "Wallet not connected",
-        description: "Please connect your wallet to check in",
+        title: "Authentication Required",
+        description: "Please complete the onboarding process to check in",
         variant: "destructive",
       })
       return
@@ -191,7 +210,7 @@ export function EnhancedDailyCheckIn() {
       const moodOption = MOODS.find((m) => m.value === selectedMood)
       if (!moodOption) throw new Error("Invalid mood selection")
 
-      // Record check-in in Supabase
+      // Record check-in (this will work offline too)
       const result = await careService.recordCheckIn(
         selectedMood,
         moodOption.label,
@@ -212,8 +231,9 @@ export function EnhancedDailyCheckIn() {
       setShowCelebration(true)
       setTimeout(() => setShowCelebration(false), 3000)
 
+      const offlineMessage = isOnline === false ? " (saved offline)" : ""
       toast({
-        title: `🎉 Check-in complete! +${result.points} CARE Points`,
+        title: `🎉 Check-in complete! +${result.points} CARE Points${offlineMessage}`,
         description: `${result.newStreak} day streak! Keep up the amazing work.`,
       })
 
@@ -251,16 +271,15 @@ export function EnhancedDailyCheckIn() {
     )
   }
 
-  if (!isConnected) {
+  if (!isAuthenticated) {
     return (
       <Card>
         <CardContent className="pt-6 text-center">
           <div className="text-6xl mb-4">🔗</div>
-          <h3 className="text-lg font-medium mb-2">Connect Your Wallet</h3>
+          <h3 className="text-lg font-medium mb-2">Authentication Required</h3>
           <p className="text-muted-foreground mb-6">
-            Connect your wallet to start your daily reflection journey and earn CARE Points
+            Please complete the onboarding process to start your wellness journey
           </p>
-          <Button className="bg-green-600 hover:bg-green-700">Connect Wallet</Button>
         </CardContent>
       </Card>
     )
@@ -286,6 +305,12 @@ export function EnhancedDailyCheckIn() {
             <CardTitle className="flex items-center gap-2">
               <Calendar className="h-5 w-5" />
               Daily Reflection
+              {isOnline !== null && (
+                <Badge variant="outline" className="bg-white/20 text-white border-none ml-2">
+                  {isOnline ? <Wifi className="h-3 w-3 mr-1" /> : <WifiOff className="h-3 w-3 mr-1" />}
+                  {isOnline ? "Online" : "Offline"}
+                </Badge>
+              )}
             </CardTitle>
             <Badge variant="outline" className="bg-white/20 text-white border-none">
               {carePointsData.currentStreak} Day Streak

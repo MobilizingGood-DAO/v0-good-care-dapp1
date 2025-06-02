@@ -1,114 +1,132 @@
 "use client"
 
-import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
-
-interface AuthUser {
-  id: string
-  email?: string
-  walletAddress: string
-  socialProvider?: string
-}
+import React, { createContext, useContext, useState, useEffect } from "react"
+import { AuthService, type AuthUser, type AuthResult } from "@/lib/auth-service"
 
 interface AuthContextType {
   user: AuthUser | null
   isLoading: boolean
   isAuthenticated: boolean
-  login: (method: "email" | "social", data: any) => Promise<boolean>
-  logout: () => Promise<void>
-  checkAuth: () => Promise<void>
+  needsUsername: boolean
+  pendingUserData: Partial<AuthUser> | null
+  loginWithSocial: (provider: "google" | "twitter") => Promise<AuthResult>
+  connectWallet: (address: string) => Promise<AuthResult>
+  completeRegistration: (username: string) => Promise<AuthResult>
+  logout: () => void
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
   isAuthenticated: false,
-  login: async () => false,
-  logout: async () => {},
-  checkAuth: async () => {},
+  needsUsername: false,
+  pendingUserData: null,
+  loginWithSocial: async () => ({ success: false }),
+  connectWallet: async () => ({ success: false }),
+  completeRegistration: async () => ({ success: false }),
+  logout: () => {},
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [needsUsername, setNeedsUsername] = useState(false)
+  const [pendingUserData, setPendingUserData] = useState<Partial<AuthUser> | null>(null)
 
-  const checkAuth = async () => {
-    try {
-      const response = await fetch("/api/auth/me", {
-        credentials: "include",
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setUser(data.user)
-      } else {
-        setUser(null)
-      }
-    } catch (error) {
-      console.error("Auth check failed:", error)
-      setUser(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const login = async (method: "email" | "social", data: any): Promise<boolean> => {
-    try {
-      setIsLoading(true)
-
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          method,
-          ...data,
-        }),
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        setUser(result.user)
-        return true
-      } else {
-        const error = await response.json()
-        console.error("Login failed:", error)
-        return false
-      }
-    } catch (error) {
-      console.error("Login error:", error)
-      return false
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const logout = async () => {
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      })
-    } catch (error) {
-      console.error("Logout error:", error)
-    } finally {
-      setUser(null)
-    }
-  }
-
+  // Check for existing session on mount
   useEffect(() => {
-    checkAuth()
+    const existingUser = AuthService.getCurrentUser()
+    if (existingUser) {
+      setUser(existingUser)
+    }
+    setIsLoading(false)
   }, [])
+
+  const loginWithSocial = async (provider: "google" | "twitter"): Promise<AuthResult> => {
+    setIsLoading(true)
+    try {
+      const result = await AuthService.loginWithSocial(provider)
+
+      if (result.success && result.user) {
+        if (result.needsUsername) {
+          setNeedsUsername(true)
+          setPendingUserData(result.user)
+        } else {
+          setUser(result.user)
+          AuthService.saveUser(result.user)
+          setNeedsUsername(false)
+          setPendingUserData(null)
+        }
+      }
+
+      return result
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const connectWallet = async (address: string): Promise<AuthResult> => {
+    setIsLoading(true)
+    try {
+      const result = await AuthService.connectWallet(address)
+
+      if (result.success && result.user) {
+        if (result.needsUsername) {
+          setNeedsUsername(true)
+          setPendingUserData(result.user)
+        } else {
+          setUser(result.user)
+          AuthService.saveUser(result.user)
+          setNeedsUsername(false)
+          setPendingUserData(null)
+        }
+      }
+
+      return result
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const completeRegistration = async (username: string): Promise<AuthResult> => {
+    if (!pendingUserData) {
+      return { success: false, error: "No pending user data" }
+    }
+
+    setIsLoading(true)
+    try {
+      const result = await AuthService.completeRegistration(pendingUserData, username)
+
+      if (result.success && result.user) {
+        setUser(result.user)
+        AuthService.saveUser(result.user)
+        setNeedsUsername(false)
+        setPendingUserData(null)
+      }
+
+      return result
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const logout = () => {
+    setUser(null)
+    setNeedsUsername(false)
+    setPendingUserData(null)
+    AuthService.logout()
+  }
 
   const value = {
     user,
     isLoading,
     isAuthenticated: !!user,
-    login,
+    needsUsername,
+    pendingUserData,
+    loginWithSocial,
+    connectWallet,
+    completeRegistration,
     logout,
-    checkAuth,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

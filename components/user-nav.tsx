@@ -1,6 +1,5 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,68 +11,82 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { User, Settings, LogOut, Wallet } from "lucide-react"
-import { useWallet } from "@/providers/wallet-provider"
+import { useToast } from "@/hooks/use-toast"
+import { AuthService } from "@/lib/auth-service"
+import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 
 export function UserNav() {
+  const { toast } = useToast()
   const router = useRouter()
-  const { address, isConnected, connectWallet, disconnectWallet } = useWallet()
+  const [user, setUser] = useState<{ username: string; email?: string; avatar?: string } | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Format address for display
-  const displayAddress = address
-    ? `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
-    : "Not connected"
+  useEffect(() => {
+    const loadUser = async () => {
+      const result = await AuthService.getCurrentUser()
+      if (result.success && result.user) {
+        setUser({
+          username: result.user.username,
+          email: result.user.email,
+          avatar: result.user.avatar,
+        })
+      }
+      setIsLoading(false)
+    }
+
+    loadUser()
+  }, [])
+
+  const handleSignOut = async () => {
+    const result = await AuthService.signOut()
+    if (result.success) {
+      toast({
+        title: "Signed out",
+        description: "You have been signed out successfully",
+      })
+      router.push("/login")
+    } else {
+      toast({
+        title: "Sign out failed",
+        description: result.error || "Failed to sign out",
+        variant: "destructive",
+      })
+    }
+  }
+
+  if (isLoading || !user) {
+    return (
+      <Button variant="ghost" size="sm" className="relative h-8 w-8 rounded-full">
+        ...
+      </Button>
+    )
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <Avatar className="h-8 w-8">
-            <AvatarImage src="/placeholder.svg?height=32&width=32" alt="User" />
-            <AvatarFallback className="bg-green-100 text-green-800">GP</AvatarFallback>
+            <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.username} />
+            <AvatarFallback>{user.username.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">User</p>
-            <p className="text-xs leading-none text-muted-foreground">user@example.com</p>
+            <p className="text-sm font-medium leading-none">{user.username}</p>
+            <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem onClick={() => router.push("/dashboard/profile")}>
-            <User className="mr-2 h-4 w-4" />
-            <span>Profile</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/dashboard/wallet")}>
-            <Wallet className="mr-2 h-4 w-4" />
-            <span>Wallet</span>
-            {isConnected && <span className="ml-auto text-xs text-muted-foreground">{displayAddress}</span>}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
-            <Settings className="mr-2 h-4 w-4" />
-            <span>Settings</span>
-          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/dashboard/profile")}>Profile</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>Settings</DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {isConnected ? (
-          <DropdownMenuItem onClick={disconnectWallet}>
-            <LogOut className="mr-2 h-4 w-4" />
-            <span>Disconnect Wallet</span>
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem onClick={connectWallet}>
-            <Wallet className="mr-2 h-4 w-4" />
-            <span>Connect Wallet</span>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/")}>
-          <LogOut className="mr-2 h-4 w-4" />
-          <span>Log out</span>
-        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleSignOut}>Log out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

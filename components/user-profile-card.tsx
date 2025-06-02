@@ -8,11 +8,11 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { User, Edit3, Save, X, Star, Trophy, Calendar, Heart, Loader2 } from "lucide-react"
-import { useWallet } from "@/providers/wallet-provider"
+import { useEnhancedAuth } from "@/providers/enhanced-auth-provider"
 import { SupabaseCareService, getLevelProgress, type CarePointsData } from "@/lib/supabase-care-service"
 
 export function UserProfileCard() {
-  const { address, isConnected } = useWallet()
+  const { user, isAuthenticated } = useEnhancedAuth()
   const { toast } = useToast()
 
   const [careService, setCareService] = useState<SupabaseCareService | null>(null)
@@ -32,22 +32,22 @@ export function UserProfileCard() {
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
-    if (isConnected && address) {
+    if (isAuthenticated && user) {
       initializeData()
     } else {
       setIsLoading(false)
     }
-  }, [isConnected, address])
+  }, [isAuthenticated, user])
 
   const initializeData = async () => {
-    if (!address) return
+    if (!user) return
 
     try {
       setIsLoading(true)
-      const service = new SupabaseCareService(address)
+      const service = new SupabaseCareService(user.id)
 
       // Initialize user if needed
-      await service.initializeUser(address)
+      await service.initializeUser(user.walletAddress, user.email)
 
       setCareService(service)
 
@@ -59,16 +59,16 @@ export function UserProfileCard() {
       const profileData = await service.getProfile()
       if (profileData) {
         setProfile({
-          username: profileData.username || `User_${address.slice(-6)}`,
+          username: profileData.username || user.username,
           bio: profileData.bio || "",
-          avatar: profileData.avatar || "",
+          avatar: profileData.avatar || user.avatar || "",
         })
         setTempBio(profileData.bio || "")
       } else {
         setProfile({
-          username: `User_${address.slice(-6)}`,
+          username: user.username,
           bio: "",
-          avatar: "",
+          avatar: user.avatar || "",
         })
       }
     } catch (error) {
@@ -135,7 +135,7 @@ export function UserProfileCard() {
     )
   }
 
-  if (!isConnected || !address) {
+  if (!isAuthenticated || !user) {
     return (
       <Card>
         <CardHeader>
@@ -174,13 +174,14 @@ export function UserProfileCard() {
         {/* User Info */}
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-            {profile.avatar || address.slice(2, 4).toUpperCase()}
+            {profile.avatar || user.username.slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1">
             <h3 className="font-medium">{profile.username}</h3>
             <p className="text-sm text-muted-foreground">
-              {address.slice(0, 6)}...{address.slice(-4)}
+              {user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}
             </p>
+            {user.authMethod === "social" && <p className="text-xs text-blue-600">{user.socialProvider} account</p>}
           </div>
         </div>
 
