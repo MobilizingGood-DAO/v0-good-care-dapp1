@@ -8,12 +8,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, Mail, Lock } from "lucide-react"
+import { Loader2, Mail, Lock, Wallet } from "lucide-react"
 import { useRealAuth } from "@/providers/real-auth-provider"
 import { useToast } from "@/hooks/use-toast"
 
 export function RealAuthForm() {
-  const { signUp, signIn } = useRealAuth()
+  const { signUp, signIn, signInWithWallet } = useRealAuth()
   const { toast } = useToast()
 
   const [isLoading, setIsLoading] = useState(false)
@@ -47,10 +47,6 @@ export function RealAuthForm() {
       const result = await signUp(signUpData.email, signUpData.password)
 
       if (result.success) {
-        toast({
-          title: "Account created!",
-          description: "Check your email to confirm your account.",
-        })
         setSignUpData({ email: "", password: "", confirmPassword: "" })
       } else {
         toast({
@@ -77,12 +73,7 @@ export function RealAuthForm() {
     try {
       const result = await signIn(signInData.email, signInData.password)
 
-      if (result.success) {
-        toast({
-          title: "Welcome back!",
-          description: "You've been signed in successfully.",
-        })
-      } else {
+      if (!result.success) {
         toast({
           title: "Sign in failed",
           description: result.error || "Invalid email or password.",
@@ -100,6 +91,31 @@ export function RealAuthForm() {
     }
   }
 
+  const handleDemoLogin = async () => {
+    setIsLoading(true)
+    try {
+      // Generate a demo wallet address
+      const demoWallet = `0x${Math.random().toString(16).slice(2, 42).padEnd(40, "0")}`
+      const result = await signInWithWallet(demoWallet)
+
+      if (!result.success) {
+        toast({
+          title: "Demo login failed",
+          description: result.error || "Something went wrong.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Demo login failed",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
       <Card className="w-full max-w-md">
@@ -109,11 +125,31 @@ export function RealAuthForm() {
           <CardDescription>Your daily wellness companion for tracking mood and building healthy habits</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+          <Tabs defaultValue="demo" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="demo">Demo</TabsTrigger>
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="demo" className="space-y-4">
+              <div className="text-center space-y-4">
+                <p className="text-sm text-muted-foreground">Try the app instantly with a demo account</p>
+                <Button onClick={handleDemoLogin} className="w-full" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating demo account...
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="mr-2 h-4 w-4" />
+                      Try Demo
+                    </>
+                  )}
+                </Button>
+              </div>
+            </TabsContent>
 
             <TabsContent value="signin" className="space-y-4">
               <form onSubmit={handleSignIn} className="space-y-4">

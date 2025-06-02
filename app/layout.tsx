@@ -1,7 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
-import { EnhancedAuthProvider } from "@/providers/enhanced-auth-provider"
+import { RealAuthProvider } from "@/providers/real-auth-provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { WalletProvider } from "@/providers/wallet-provider"
@@ -20,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <EnhancedAuthProvider>
+        <RealAuthProvider>
           <WalletProvider>
             <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
               <div className="min-h-screen bg-background font-sans antialiased">
@@ -29,7 +29,7 @@ export default function RootLayout({
               </div>
             </ThemeProvider>
           </WalletProvider>
-        </EnhancedAuthProvider>
+        </RealAuthProvider>
       </body>
     </html>
   )

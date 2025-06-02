@@ -4,13 +4,12 @@ export interface User {
   id: string
   email?: string
   username?: string
-  name?: string
   wallet_address?: string
   bio?: string
   avatar?: string
   social_provider?: string
-  care_points?: number
   created_at?: string
+  updated_at?: string
 }
 
 export interface UserStats {
@@ -22,17 +21,17 @@ export interface UserStats {
   level: number
   total_checkins: number
   last_checkin?: string
+  updated_at?: string
 }
 
 export interface CheckIn {
-  id: number
+  id: string
   user_id: string
   date: string
   mood: number
   mood_label: string
   points: number
   streak: number
-  notes?: string
   gratitude_note?: string
   resources_viewed: string[]
   created_at: string
@@ -51,6 +50,8 @@ export class RealSupabaseService {
   // Get or create user profile
   static async getOrCreateUser(authUser: any): Promise<User> {
     try {
+      console.log("Getting/creating user:", authUser.id)
+
       // First, try to get existing user
       const { data: existingUser, error: getUserError } = await supabase
         .from("users")
@@ -59,27 +60,37 @@ export class RealSupabaseService {
         .single()
 
       if (existingUser && !getUserError) {
+        console.log("Found existing user:", existingUser.id)
         return existingUser
       }
 
+      console.log("Creating new user...")
+
       // Create new user if doesn't exist
+      const walletAddress = authUser.user_metadata?.wallet_address || `0x${authUser.id.replace(/-/g, "").slice(0, 40)}`
+
       const newUser = {
         id: authUser.id,
         email: authUser.email,
-        name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "User",
+        wallet_address: walletAddress,
         username:
           authUser.user_metadata?.full_name?.replace(/\s+/g, "_").toLowerCase() ||
           authUser.email?.split("@")[0] ||
           `user_${authUser.id.slice(-6)}`,
         avatar: authUser.user_metadata?.avatar_url || null,
-        social_provider: authUser.app_metadata?.provider || null,
-        care_points: 0,
+        social_provider: authUser.app_metadata?.provider || "email",
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }
 
       const { data: createdUser, error: createError } = await supabase.from("users").insert(newUser).select().single()
 
-      if (createError) throw createError
+      if (createError) {
+        console.error("Error creating user:", createError)
+        throw createError
+      }
+
+      console.log("Created user:", createdUser.id)
 
       // Create user stats
       await this.initializeUserStats(authUser.id)
@@ -94,6 +105,8 @@ export class RealSupabaseService {
   // Initialize user stats
   static async initializeUserStats(userId: string): Promise<void> {
     try {
+      console.log("Initializing user stats for:", userId)
+
       const { error } = await supabase.from("user_stats").insert({
         user_id: userId,
         total_points: 0,
@@ -101,11 +114,15 @@ export class RealSupabaseService {
         longest_streak: 0,
         level: 1,
         total_checkins: 0,
+        updated_at: new Date().toISOString(),
       })
 
       if (error && !error.message.includes("duplicate")) {
+        console.error("Error initializing user stats:", error)
         throw error
       }
+
+      console.log("User stats initialized")
     } catch (error) {
       console.error("Error initializing user stats:", error)
     }
@@ -116,7 +133,11 @@ export class RealSupabaseService {
     try {
       const { data, error } = await supabase.from("user_stats").select("*").eq("user_id", userId).single()
 
-      if (error) throw error
+      if (error) {
+        console.error("Error getting user stats:", error)
+        return null
+      }
+
       return data
     } catch (error) {
       console.error("Error getting user stats:", error)
@@ -130,7 +151,7 @@ export class RealSupabaseService {
       const today = new Date().toISOString().split("T")[0]
 
       const { data, error } = await supabase
-        .from("daily_checkins")
+        .from("checkins")
         .select("id")
         .eq("user_id", userId)
         .eq("date", today)
@@ -151,6 +172,8 @@ export class RealSupabaseService {
     resourcesViewed: string[] = [],
   ): Promise<{ success: boolean; points: number; newStreak: number; error?: string }> {
     try {
+      console.log("Recording check-in for user:", userId)
+
       const today = new Date().toISOString().split("T")[0]
 
       // Check if already checked in today
@@ -160,9 +183,10 @@ export class RealSupabaseService {
       }
 
       // Get current stats
-      const stats = await this.getUserStats(userId)
+      let stats = await this.getUserStats(userId)
       if (!stats) {
         await this.initializeUserStats(userId)
+        stats = await this.getUserStats(userId)
       }
 
       // Calculate streak
@@ -184,7 +208,7 @@ export class RealSupabaseService {
 
       // Insert check-in
       const { data: checkIn, error: checkInError } = await supabase
-        .from("daily_checkins")
+        .from("checkins")
         .insert({
           user_id: userId,
           date: today,
@@ -192,7 +216,6 @@ export class RealSupabaseService {
           mood_label: moodLabel,
           points,
           streak: newStreak,
-          notes: gratitudeNote,
           gratitude_note: gratitudeNote,
           resources_viewed: resourcesViewed,
           created_at: new Date().toISOString(),
@@ -200,7 +223,12 @@ export class RealSupabaseService {
         .select()
         .single()
 
-      if (checkInError) throw checkInError
+      if (checkInError) {
+        console.error("Error inserting check-in:", checkInError)
+        throw checkInError
+      }
+
+      console.log("Check-in recorded:", checkIn.id)
 
       // Update user stats
       const newTotalPoints = (stats?.total_points || 0) + points
@@ -219,10 +247,12 @@ export class RealSupabaseService {
         })
         .eq("user_id", userId)
 
-      if (statsError) throw statsError
+      if (statsError) {
+        console.error("Error updating user stats:", statsError)
+        throw statsError
+      }
 
-      // Update user care_points for quick access
-      await supabase.from("users").update({ care_points: newTotalPoints }).eq("id", userId)
+      console.log("User stats updated")
 
       return { success: true, points, newStreak }
     } catch (error) {
@@ -235,7 +265,7 @@ export class RealSupabaseService {
   static async getUserCheckIns(userId: string, limit = 30): Promise<CheckIn[]> {
     try {
       const { data, error } = await supabase
-        .from("daily_checkins")
+        .from("checkins")
         .select("*")
         .eq("user_id", userId)
         .order("date", { ascending: false })
@@ -259,7 +289,7 @@ export class RealSupabaseService {
           total_points,
           current_streak,
           level,
-          users!inner(username, name)
+          users!inner(username, wallet_address)
         `)
         .order("total_points", { ascending: false })
         .limit(limit)
@@ -268,7 +298,10 @@ export class RealSupabaseService {
 
       return (data || []).map((entry, index) => ({
         user_id: entry.user_id,
-        username: entry.users.username || entry.users.name || `User_${entry.user_id.slice(-6)}`,
+        username:
+          entry.users.username ||
+          `${entry.users.wallet_address?.slice(0, 6)}...${entry.users.wallet_address?.slice(-4)}` ||
+          `User_${entry.user_id.slice(-6)}`,
         total_points: entry.total_points,
         current_streak: entry.current_streak,
         level: entry.level,
