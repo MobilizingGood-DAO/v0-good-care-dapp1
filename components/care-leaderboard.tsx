@@ -3,49 +3,37 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Trophy, Star, TrendingUp, Users } from "lucide-react"
+import { Trophy, Star, TrendingUp, Users, Loader2 } from "lucide-react"
 import { useWallet } from "@/providers/wallet-provider"
-import { getMockLeaderboard, CarePointsService, type LeaderboardEntry } from "@/lib/care-points-service"
+import { getLeaderboard, type LeaderboardEntry } from "@/lib/supabase-care-service"
 
 export function CareLeaderboard() {
   const { address, isConnected } = useWallet()
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [userRank, setUserRank] = useState<number | null>(null)
-  const [userEntry, setUserEntry] = useState<LeaderboardEntry | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Load mock leaderboard data
-    const mockData = getMockLeaderboard()
+    loadLeaderboard()
+  }, [address])
 
-    // If user is connected, add their data to the leaderboard
-    if (isConnected && address) {
-      const carePointsService = new CarePointsService(address)
-      const userData = carePointsService.loadData()
+  const loadLeaderboard = async () => {
+    try {
+      setIsLoading(true)
+      const data = await getLeaderboard(10)
+      setLeaderboard(data)
 
-      const userLeaderboardEntry: LeaderboardEntry = {
-        address,
-        username: `User_${address.slice(-4)}`,
-        totalPoints: userData.totalPoints,
-        currentStreak: userData.currentStreak,
-        level: userData.level,
-        avatar: "🌟",
+      // Find current user's rank
+      if (address) {
+        const userEntry = data.find((entry) => entry.userId === address)
+        setUserRank(userEntry?.rank || null)
       }
-
-      // Combine user data with mock data and sort
-      const combinedData = [...mockData, userLeaderboardEntry].sort((a, b) => b.totalPoints - a.totalPoints)
-
-      setLeaderboard(combinedData)
-
-      // Find user's rank
-      const rank = combinedData.findIndex((entry) => entry.address === address) + 1
-      setUserRank(rank)
-      setUserEntry(userLeaderboardEntry)
-    } else {
-      setLeaderboard(mockData)
-      setUserRank(null)
-      setUserEntry(null)
+    } catch (error) {
+      console.error("Error loading leaderboard:", error)
+    } finally {
+      setIsLoading(false)
     }
-  }, [isConnected, address])
+  }
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
@@ -73,6 +61,23 @@ export function CareLeaderboard() {
     }
   }
 
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Trophy className="h-5 w-5 text-yellow-500" />
+            Community Leaderboard
+          </CardTitle>
+          <CardDescription>Loading community rankings...</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -82,7 +87,10 @@ export function CareLeaderboard() {
               <Trophy className="h-5 w-5 text-yellow-500" />
               Community Leaderboard
             </CardTitle>
-            <CardDescription>See how you rank among fellow wellness warriors</CardDescription>
+            <CardDescription>
+              See how you rank among fellow wellness warriors
+              {userRank && <span className="block mt-1 text-green-600 font-medium">You're ranked #{userRank}! 🎉</span>}
+            </CardDescription>
           </div>
           <Badge variant="outline" className="flex items-center gap-1">
             <Users className="h-3 w-3" />
@@ -91,8 +99,8 @@ export function CareLeaderboard() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* User's Current Rank (if connected) */}
-        {userRank && userEntry && (
+        {/* User's Current Rank (if connected and ranked) */}
+        {userRank && isConnected && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -103,15 +111,13 @@ export function CareLeaderboard() {
                 </div>
                 <div>
                   <p className="font-medium">Your Rank</p>
-                  <p className="text-sm text-muted-foreground">
-                    {userEntry.totalPoints} CARE Points • Level {userEntry.level}
-                  </p>
+                  <p className="text-sm text-muted-foreground">Keep checking in to climb higher!</p>
                 </div>
               </div>
               <div className="text-right">
                 <div className="flex items-center gap-1 text-green-600">
                   <TrendingUp className="h-4 w-4" />
-                  <span className="font-medium">{userEntry.currentStreak} day streak</span>
+                  <span className="font-medium">#{userRank}</span>
                 </div>
               </div>
             </div>
@@ -120,25 +126,24 @@ export function CareLeaderboard() {
 
         {/* Leaderboard List */}
         <div className="space-y-2">
-          {leaderboard.slice(0, 10).map((entry, index) => {
-            const rank = index + 1
-            const isCurrentUser = entry.address === address
+          {leaderboard.map((entry) => {
+            const isCurrentUser = entry.userId === address
 
             return (
               <div
-                key={entry.address}
+                key={entry.userId}
                 className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
                   isCurrentUser ? "bg-green-50 border-green-200" : "bg-white border-gray-200 hover:bg-gray-50"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border ${getRankColor(rank)}`}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border ${getRankColor(entry.rank)}`}
                   >
-                    {getRankIcon(rank)}
+                    {getRankIcon(entry.rank)}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">{entry.avatar}</span>
+                    <span className="text-lg">{entry.avatar || "🌟"}</span>
                     <div>
                       <p className="font-medium">
                         {entry.username}
@@ -162,9 +167,17 @@ export function CareLeaderboard() {
         </div>
 
         {/* Encouragement Message */}
-        <div className="text-center pt-4 border-t">
-          <p className="text-sm text-muted-foreground">Keep checking in daily to climb the leaderboard! 🌱</p>
-        </div>
+        {leaderboard.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <TrendingUp className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No one has started their journey yet.</p>
+            <p className="text-sm">Be the first to check in!</p>
+          </div>
+        ) : (
+          <div className="text-center pt-4 border-t">
+            <p className="text-sm text-muted-foreground">Keep checking in daily to climb the leaderboard! 🌱</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

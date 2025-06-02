@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { useWallet } from "@/providers/wallet-provider"
 import { useToast } from "@/hooks/use-toast"
-import { CarePointsService, getLevelProgress } from "@/lib/care-points-service"
+import { SupabaseCareService, getLevelProgress, type CarePointsData } from "@/lib/supabase-care-service"
 
 // Mood options with enhanced descriptions
 const MOODS = [
@@ -54,29 +54,29 @@ const MOODS = [
 // Mental health resources based on mood
 const MOOD_RESOURCES = {
   1: [
-    { title: "Crisis Support", description: "24/7 helplines and immediate support", urgent: true },
-    { title: "Breathing Exercises", description: "Quick techniques to find calm" },
-    { title: "Grounding Techniques", description: "5-4-3-2-1 method and more" },
+    { id: "crisis", title: "Crisis Support", description: "24/7 helplines and immediate support", urgent: true },
+    { id: "breathing", title: "Breathing Exercises", description: "Quick techniques to find calm" },
+    { id: "grounding", title: "Grounding Techniques", description: "5-4-3-2-1 method and more" },
   ],
   2: [
-    { title: "Self-Compassion Guide", description: "Be kind to yourself today" },
-    { title: "Gentle Movement", description: "Light exercises to boost mood" },
-    { title: "Journaling Prompts", description: "Process your feelings safely" },
+    { id: "self-compassion", title: "Self-Compassion Guide", description: "Be kind to yourself today" },
+    { id: "gentle-movement", title: "Gentle Movement", description: "Light exercises to boost mood" },
+    { id: "journaling", title: "Journaling Prompts", description: "Process your feelings safely" },
   ],
   3: [
-    { title: "Mindfulness Practices", description: "Stay present and centered" },
-    { title: "Gratitude Exercises", description: "Find small moments of joy" },
-    { title: "Connection Ideas", description: "Reach out to your support network" },
+    { id: "mindfulness", title: "Mindfulness Practices", description: "Stay present and centered" },
+    { id: "gratitude", title: "Gratitude Exercises", description: "Find small moments of joy" },
+    { id: "connection", title: "Connection Ideas", description: "Reach out to your support network" },
   ],
   4: [
-    { title: "Maintain Momentum", description: "Keep your positive energy flowing" },
-    { title: "Help Others", description: "Share your good vibes" },
-    { title: "Creative Expression", description: "Channel your energy into art" },
+    { id: "momentum", title: "Maintain Momentum", description: "Keep your positive energy flowing" },
+    { id: "help-others", title: "Help Others", description: "Share your good vibes" },
+    { id: "creative", title: "Creative Expression", description: "Channel your energy into art" },
   ],
   5: [
-    { title: "Celebrate Yourself", description: "Acknowledge your growth" },
-    { title: "Spread Joy", description: "Be a light for others" },
-    { title: "Plan Ahead", description: "Set intentions for tomorrow" },
+    { id: "celebrate", title: "Celebrate Yourself", description: "Acknowledge your growth" },
+    { id: "spread-joy", title: "Spread Joy", description: "Be a light for others" },
+    { id: "plan-ahead", title: "Plan Ahead", description: "Set intentions for tomorrow" },
   ],
 }
 
@@ -87,31 +87,61 @@ export function EnhancedDailyCheckIn() {
   // Component state
   const [selectedMood, setSelectedMood] = useState<number | null>(null)
   const [gratitude, setGratitude] = useState("")
-  const [carePointsService, setCarePointsService] = useState<CarePointsService | null>(null)
-  const [carePointsData, setCarePointsData] = useState({
+  const [selectedResources, setSelectedResources] = useState<string[]>([])
+  const [careService, setCareService] = useState<SupabaseCareService | null>(null)
+  const [carePointsData, setCarePointsData] = useState<CarePointsData>({
     totalPoints: 0,
     currentStreak: 0,
     longestStreak: 0,
     level: 1,
-    lastCheckIn: null as string | null,
+    lastCheckIn: null,
     checkInHistory: [],
+    totalCheckIns: 0,
   })
   const [showMoodSelector, setShowMoodSelector] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showCelebration, setShowCelebration] = useState(false)
+  const [canCheckIn, setCanCheckIn] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Initialize CARE Points service
+  // Initialize service and load data
   useEffect(() => {
     if (isConnected && address) {
-      const service = new CarePointsService(address)
-      setCarePointsService(service)
-      setCarePointsData(service.loadData())
+      initializeService()
+    } else {
+      setIsLoading(false)
     }
   }, [isConnected, address])
 
-  // Check if user can check in today
-  const canCheckInToday = () => {
-    return carePointsService?.canCheckInToday() ?? false
+  const initializeService = async () => {
+    if (!address) return
+
+    try {
+      setIsLoading(true)
+      const service = new SupabaseCareService(address)
+
+      // Initialize user in database
+      await service.initializeUser(address)
+
+      setCareService(service)
+
+      // Load data
+      const data = await service.loadData()
+      setCarePointsData(data)
+
+      // Check if can check in today
+      const canCheck = await service.canCheckInToday()
+      setCanCheckIn(canCheck)
+    } catch (error) {
+      console.error("Error initializing service:", error)
+      toast({
+        title: "Connection Error",
+        description: "Failed to load your data. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // Handle mood selection
@@ -119,9 +149,16 @@ export function EnhancedDailyCheckIn() {
     setSelectedMood(mood)
   }
 
+  // Toggle resource selection
+  const toggleResource = (resourceId: string) => {
+    setSelectedResources((prev) =>
+      prev.includes(resourceId) ? prev.filter((id) => id !== resourceId) : [...prev, resourceId],
+    )
+  }
+
   // Handle check-in submission
   const handleCheckIn = async () => {
-    if (!isConnected || !address || !carePointsService) {
+    if (!isConnected || !address || !careService) {
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet to check in",
@@ -130,7 +167,7 @@ export function EnhancedDailyCheckIn() {
       return
     }
 
-    if (!canCheckInToday()) {
+    if (!canCheckIn) {
       toast({
         title: "Already checked in",
         description: "You've already checked in today. Come back tomorrow!",
@@ -151,15 +188,25 @@ export function EnhancedDailyCheckIn() {
     setIsSubmitting(true)
 
     try {
-      // Record check-in locally
-      const result = carePointsService.recordCheckIn(selectedMood, gratitude.trim() || undefined)
+      const moodOption = MOODS.find((m) => m.value === selectedMood)
+      if (!moodOption) throw new Error("Invalid mood selection")
+
+      // Record check-in in Supabase
+      const result = await careService.recordCheckIn(
+        selectedMood,
+        moodOption.label,
+        gratitude.trim() || undefined,
+        selectedResources,
+      )
 
       if (!result.success) {
-        throw new Error("Failed to record check-in")
+        throw new Error(result.error || "Failed to record check-in")
       }
 
-      // Update local state
-      setCarePointsData(carePointsService.loadData())
+      // Reload data
+      const updatedData = await careService.loadData()
+      setCarePointsData(updatedData)
+      setCanCheckIn(false)
 
       // Show celebration
       setShowCelebration(true)
@@ -173,12 +220,13 @@ export function EnhancedDailyCheckIn() {
       // Reset form
       setSelectedMood(null)
       setGratitude("")
+      setSelectedResources([])
       setShowMoodSelector(false)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Check-in error:", error)
       toast({
         title: "Check-in failed",
-        description: "Something went wrong. Please try again.",
+        description: error.message || "Something went wrong. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -189,6 +237,35 @@ export function EnhancedDailyCheckIn() {
   // Get level progress
   const levelProgress = getLevelProgress(carePointsData.totalPoints)
 
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-48 mx-auto"></div>
+            <div className="h-4 bg-gray-200 rounded w-32 mx-auto"></div>
+            <div className="h-12 bg-gray-200 rounded w-40 mx-auto"></div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!isConnected) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <div className="text-6xl mb-4">🔗</div>
+          <h3 className="text-lg font-medium mb-2">Connect Your Wallet</h3>
+          <p className="text-muted-foreground mb-6">
+            Connect your wallet to start your daily reflection journey and earn CARE Points
+          </p>
+          <Button className="bg-green-600 hover:bg-green-700">Connect Wallet</Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Celebration Animation */}
@@ -197,7 +274,7 @@ export function EnhancedDailyCheckIn() {
           <div className="bg-white rounded-lg p-8 text-center animate-bounce">
             <div className="text-6xl mb-4">🎉</div>
             <h2 className="text-2xl font-bold text-green-600 mb-2">Amazing!</h2>
-            <p className="text-gray-600">Your daily reflection has been recorded</p>
+            <p className="text-gray-600">Your daily reflection has been saved to the blockchain of care</p>
           </div>
         </div>
       )}
@@ -273,11 +350,11 @@ export function EnhancedDailyCheckIn() {
               </p>
               <Button
                 onClick={() => setShowMoodSelector(true)}
-                disabled={!canCheckInToday() || !isConnected}
+                disabled={!canCheckIn}
                 className="w-full sm:w-auto"
                 size="lg"
               >
-                {canCheckInToday() ? (
+                {canCheckIn ? (
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4" />
                     Start Daily Check-in
@@ -313,23 +390,32 @@ export function EnhancedDailyCheckIn() {
               {/* Resources based on mood */}
               {selectedMood && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-medium text-blue-800 mb-3">Recommended for you today:</h4>
+                  <h4 className="font-medium text-blue-800 mb-3">Recommended resources for you today:</h4>
                   <div className="space-y-2">
-                    {MOOD_RESOURCES[selectedMood as keyof typeof MOOD_RESOURCES].map((resource, index) => (
-                      <div
-                        key={index}
-                        className={`p-2 rounded ${resource.urgent ? "bg-red-100 border border-red-200" : "bg-white"}`}
+                    {MOOD_RESOURCES[selectedMood as keyof typeof MOOD_RESOURCES].map((resource) => (
+                      <button
+                        key={resource.id}
+                        onClick={() => toggleResource(resource.id)}
+                        className={`w-full text-left p-2 rounded transition-colors ${
+                          selectedResources.includes(resource.id)
+                            ? "bg-blue-100 border border-blue-300"
+                            : resource.urgent
+                              ? "bg-red-100 border border-red-200"
+                              : "bg-white hover:bg-gray-50"
+                        }`}
                       >
                         <div className="flex items-center gap-2">
                           {resource.urgent && <span className="text-red-500">🚨</span>}
+                          {selectedResources.includes(resource.id) && <span className="text-blue-500">✓</span>}
                           <div>
                             <span className="font-medium text-sm">{resource.title}</span>
                             <p className="text-xs text-muted-foreground">{resource.description}</p>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
+                  <p className="text-xs text-blue-600 mt-2">Click to mark resources you'd like to explore</p>
                 </div>
               )}
 
@@ -337,7 +423,7 @@ export function EnhancedDailyCheckIn() {
               <div className="space-y-3">
                 <Label htmlFor="gratitude" className="flex items-center gap-2">
                   <Heart className="h-4 w-4 text-green-600" />
-                  What are you grateful for today? (Optional)
+                  What are you grateful for today? (Optional +3 bonus points)
                 </Label>
                 <Textarea
                   id="gratitude"
@@ -366,11 +452,7 @@ export function EnhancedDailyCheckIn() {
                   ) : (
                     <div className="flex items-center gap-2">
                       <CheckCircle className="h-4 w-4" />
-                      Complete Check-in (+
-                      {selectedMood
-                        ? 10 + Math.min(carePointsData.currentStreak * 2, 20) + (selectedMood >= 4 ? 5 : 0)
-                        : 10}{" "}
-                      points)
+                      Complete Check-in
                     </div>
                   )}
                 </Button>
@@ -380,6 +462,7 @@ export function EnhancedDailyCheckIn() {
                     setShowMoodSelector(false)
                     setSelectedMood(null)
                     setGratitude("")
+                    setSelectedResources([])
                   }}
                   disabled={isSubmitting}
                 >
