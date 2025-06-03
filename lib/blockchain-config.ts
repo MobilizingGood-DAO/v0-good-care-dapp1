@@ -1,5 +1,7 @@
+// GOOD CARE Network configuration
 export const CHAIN_CONFIG = {
-  chainId: 741741,
+  chainId: 43114, // Avalanche Mainnet (GOOD CARE Subnet)
+  chainIdHex: "0xa86a",
   chainName: "GOOD CARE Network",
   nativeCurrency: {
     name: "CARE",
@@ -7,15 +9,14 @@ export const CHAIN_CONFIG = {
     decimals: 18,
   },
   rpcUrls: [process.env.NEXT_PUBLIC_GOODCARE_RPC || "https://subnets.avax.network/goodcare/mainnet/rpc"],
-  blockExplorerUrls: ["https://explorer.goodcare.network"],
+  blockExplorerUrls: ["https://subnets.avax.network/goodcare"],
 }
 
-export const AVACLOUD_CONFIG = {
-  projectId: process.env.NEXT_PUBLIC_AVACLOUD_PROJECT_ID || "",
+// Token contract addresses
+export const TOKEN_ADDRESSES = {
+  GCT: "0x1234567890abcdef1234567890abcdef12345678", // GOOD CARE Token
+  CARE: "0x0000000000000000000000000000000000000000", // Native CARE token
 }
-
-// GCT Token contract address
-export const GCT_TOKEN_ADDRESS = "0x10acd62bdfa7028b0A96710a9f6406446D2b1164"
 
 // CARE Daily Reflections NFT contract address - UPDATED
 export const REFLECTIONS_CONTRACT_ADDRESS = "0x141b77a109011475A4c347fD19Dd4ead79AE912F"

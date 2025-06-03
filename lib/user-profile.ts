@@ -1,139 +1,99 @@
-// User profile interface
-export interface UserProfile {
+// User profile management for wallet addresses
+interface UserProfile {
   address: string
   name: string
   username: string
-  bio: string
   avatar?: string
-  email?: string
-  createdAt: string
+  bio?: string
 }
 
-// In-memory storage for demo purposes
-// In a real app, this would be stored in a database
-const userProfiles = new Map<string, UserProfile>()
-
-// Initialize with some demo profiles
-const demoProfiles: UserProfile[] = [
+// Demo user profiles
+const DEMO_PROFILES: UserProfile[] = [
   {
-    address: "0x1234567890123456789012345678901234567890",
+    address: "0x742d35Cc6634C0532925a3b8D4C2C4e0C8b8E8E8",
     name: "Alice Green",
     username: "alice_green",
-    bio: "Passionate about regenerative finance and community building.",
-    createdAt: "2023-01-15",
+    bio: "Wellness advocate and community builder",
   },
   {
-    address: "0x0987654321098765432109876543210987654321",
+    address: "0x8ba1f109551bD432803012645Hac136c9c1659e",
     name: "Bob Care",
     username: "bob_care",
-    bio: "Environmental activist and blockchain enthusiast.",
-    createdAt: "2023-02-20",
+    bio: "Regenerative finance enthusiast",
   },
   {
-    address: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
-    name: "Carol Earth",
-    username: "carol_earth",
-    bio: "Building a sustainable future through technology.",
-    createdAt: "2023-03-10",
+    address: "0x1234567890abcdef1234567890abcdef12345678",
+    name: "Charlie Wellness",
+    username: "charlie_wellness",
+    bio: "Mental health supporter",
   },
 ]
 
-// Initialize the demo profiles
-demoProfiles.forEach((profile) => {
-  userProfiles.set(profile.address.toLowerCase(), profile)
-})
+let userProfiles: UserProfile[] = []
 
-// Get user profile by address
+export function loadUserProfiles(): UserProfile[] {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("userProfiles")
+    if (stored) {
+      userProfiles = JSON.parse(stored)
+    }
+  }
+  return userProfiles
+}
+
+export function saveUserProfiles(profiles: UserProfile[]) {
+  userProfiles = profiles
+  if (typeof window !== "undefined") {
+    localStorage.setItem("userProfiles", JSON.stringify(profiles))
+  }
+}
+
+export function initializeDemoProfiles() {
+  const existing = loadUserProfiles()
+  if (existing.length === 0) {
+    saveUserProfiles(DEMO_PROFILES)
+  }
+}
+
+export function addUserProfile(profile: UserProfile) {
+  const profiles = loadUserProfiles()
+  const existingIndex = profiles.findIndex((p) => p.address.toLowerCase() === profile.address.toLowerCase())
+
+  if (existingIndex >= 0) {
+    profiles[existingIndex] = profile
+  } else {
+    profiles.push(profile)
+  }
+
+  saveUserProfiles(profiles)
+}
+
 export function getUserProfile(address: string): UserProfile | null {
-  if (!address) return null
-
-  const profile = userProfiles.get(address.toLowerCase())
-  if (profile) {
-    return profile
-  }
-
-  // Try to load from localStorage if available
-  if (typeof window !== "undefined") {
-    try {
-      const profiles = JSON.parse(localStorage.getItem("userProfiles") || "{}")
-      const storedProfile = profiles[address.toLowerCase()]
-      if (storedProfile) {
-        userProfiles.set(address.toLowerCase(), storedProfile)
-        return storedProfile
-      }
-    } catch (error) {
-      console.error("Error loading user profile from localStorage:", error)
-    }
-  }
-
-  return null
+  const profiles = loadUserProfiles()
+  return profiles.find((p) => p.address.toLowerCase() === address.toLowerCase()) || null
 }
 
-// Save user profile
-export function saveUserProfile(profile: UserProfile): void {
-  userProfiles.set(profile.address.toLowerCase(), profile)
+export function searchUsers(query: string): UserProfile[] {
+  const profiles = loadUserProfiles()
+  const lowerQuery = query.toLowerCase()
 
-  // In a real app, you would save to a database here
-  // For demo purposes, we'll also save to localStorage
-  if (typeof window !== "undefined") {
-    try {
-      const profiles = JSON.parse(localStorage.getItem("userProfiles") || "{}")
-      profiles[profile.address.toLowerCase()] = profile
-      localStorage.setItem("userProfiles", JSON.stringify(profiles))
-    } catch (error) {
-      console.error("Error saving user profile to localStorage:", error)
-    }
-  }
+  return profiles.filter(
+    (profile) =>
+      profile.name.toLowerCase().includes(lowerQuery) ||
+      profile.username.toLowerCase().includes(lowerQuery) ||
+      profile.address.toLowerCase().includes(lowerQuery),
+  )
 }
 
-// Load profiles from localStorage on initialization
-export function loadUserProfiles(): void {
-  if (typeof window !== "undefined") {
-    try {
-      const profiles = JSON.parse(localStorage.getItem("userProfiles") || "{}")
-      Object.entries(profiles).forEach(([address, profile]) => {
-        userProfiles.set(address, profile as UserProfile)
-      })
-    } catch (error) {
-      console.error("Error loading user profiles:", error)
-    }
-  }
-}
-
-// Get display name for an address (name or shortened address)
 export function getDisplayName(address: string): string {
-  if (!address) return "Unknown"
-
   const profile = getUserProfile(address)
-  if (profile && profile.name) {
+  if (profile) {
     return profile.name
   }
 
-  // Return shortened address if no profile found
-  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
-}
+  if (address.startsWith("0x") && address.length === 42) {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`
+  }
 
-// Search users by name or username
-export function searchUsers(query: string): UserProfile[] {
-  if (!query || query.length < 2) return []
-
-  const results: UserProfile[] = []
-  const lowerQuery = query.toLowerCase()
-
-  userProfiles.forEach((profile) => {
-    if (
-      profile.name.toLowerCase().includes(lowerQuery) ||
-      profile.username.toLowerCase().includes(lowerQuery) ||
-      profile.address.toLowerCase().includes(lowerQuery)
-    ) {
-      results.push(profile)
-    }
-  })
-
-  return results
-}
-
-// Initialize with some demo profiles
-export function initializeDemoProfiles(): void {
-  demoProfiles.forEach(saveUserProfile)
+  return address
 }

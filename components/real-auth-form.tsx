@@ -11,8 +11,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useRealAuth } from "@/providers/real-auth-provider"
 import { Loader2, Heart, Wallet } from "lucide-react"
 
+// Twitter/X icon component
+const TwitterIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+)
+
 export function RealAuthForm() {
-  const { signUp, signIn, signInWithWallet } = useRealAuth()
+  const { signUp, signIn, signInWithTwitter, signInWithWallet } = useRealAuth()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -43,6 +50,23 @@ export function RealAuthForm() {
     setIsLoading(false)
   }
 
+  const handleTwitterLogin = async () => {
+    setIsLoading(true)
+    setError("")
+
+    try {
+      const result = await signInWithTwitter()
+      if (!result.success) {
+        setError(result.error || "Twitter login failed")
+        setIsLoading(false)
+      }
+      // Don't set loading to false here as the redirect will happen
+    } catch (error) {
+      setError("Failed to connect to Twitter. Please try again.")
+      setIsLoading(false)
+    }
+  }
+
   const handleDemoLogin = async () => {
     setIsLoading(true)
     setError("")
@@ -65,16 +89,23 @@ export function RealAuthForm() {
           <p className="text-muted-foreground">Your daily wellness companion</p>
         </div>
 
-        {/* Demo Button */}
-        <Button
-          onClick={handleDemoLogin}
-          disabled={isLoading}
-          className="w-full bg-green-600 hover:bg-green-700"
-          size="lg"
-        >
-          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wallet className="mr-2 h-4 w-4" />}
-          Try Demo (No signup needed)
-        </Button>
+        {/* Social Login Buttons */}
+        <div className="space-y-3">
+          <Button onClick={handleTwitterLogin} disabled={isLoading} variant="outline" className="w-full" size="lg">
+            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TwitterIcon className="mr-2 h-4 w-4" />}
+            Continue with X (Twitter)
+          </Button>
+
+          <Button
+            onClick={handleDemoLogin}
+            disabled={isLoading}
+            className="w-full bg-green-600 hover:bg-green-700"
+            size="lg"
+          >
+            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wallet className="mr-2 h-4 w-4" />}
+            Try Demo (No signup needed)
+          </Button>
+        </div>
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center">

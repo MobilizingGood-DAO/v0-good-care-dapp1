@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { RealSupabaseService, type User } from "@/lib/real-supabase-service"
 import { useToast } from "@/hooks/use-toast"
+import { addUserProfile } from "@/lib/user-profile"
 
 interface AuthContextType {
   user: User | null
@@ -12,6 +13,7 @@ interface AuthContextType {
   isLoading: boolean
   signUp: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  signInWithTwitter: () => Promise<{ success: boolean; error?: string }>
   signInWithWallet: (walletAddress: string) => Promise<{ success: boolean; error?: string }>
   signOut: () => Promise<void>
 }
@@ -67,6 +69,17 @@ export function RealAuthProvider({ children }: { children: React.ReactNode }) {
       const userProfile = await RealSupabaseService.getOrCreateUser(authUser)
       setUser(userProfile)
 
+      // Connect wallet address to user profile
+      if (userProfile.wallet_address) {
+        addUserProfile({
+          address: userProfile.wallet_address,
+          name: userProfile.username || userProfile.name || "User",
+          username: userProfile.username || `user_${userProfile.id.slice(-6)}`,
+          bio: userProfile.bio || undefined,
+          avatar: userProfile.avatar || undefined,
+        })
+      }
+
       toast({
         title: "Welcome!",
         description: `Good to see you, ${userProfile.username || "friend"}!`,
@@ -115,11 +128,33 @@ export function RealAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const signInWithTwitter = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "twitter",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+
+      if (error) throw error
+
+      // The actual sign-in will be handled by the auth state change listener
+      return { success: true }
+    } catch (error: any) {
+      console.error("Twitter sign in error:", error)
+      return { success: false, error: error.message }
+    }
+  }
+
   const signInWithWallet = async (walletAddress: string) => {
     try {
+      // Generate a valid UUID for demo user
+      const demoUserId = crypto.randomUUID()
+
       // Create a demo user
       const demoUser = {
-        id: `demo_${Date.now()}`,
+        id: demoUserId,
         email: `demo_${Date.now()}@goodcare.local`,
         user_metadata: {
           wallet_address: walletAddress,
@@ -140,6 +175,7 @@ export function RealAuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true }
     } catch (error: any) {
+      console.error("Demo login error:", error)
       return { success: false, error: error.message }
     }
   }
@@ -166,6 +202,7 @@ export function RealAuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         signUp,
         signIn,
+        signInWithTwitter,
         signInWithWallet,
         signOut,
       }}

@@ -5,35 +5,30 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Loader2 } from "lucide-react"
 
-export default function AuthCallbackPage() {
+export default function AuthCallback() {
   const router = useRouter()
 
   useEffect(() => {
     const handleAuthCallback = async () => {
-      const { error } = await supabase.auth.getSession()
+      try {
+        const { data, error } = await supabase.auth.getSession()
 
-      // Get the user
-      const { data: userData } = await supabase.auth.getUser()
+        if (error) {
+          console.error("Auth callback error:", error)
+          router.push("/?error=auth_failed")
+          return
+        }
 
-      if (error || !userData?.user) {
+        if (data.session) {
+          // User is authenticated, redirect to main app
+          router.push("/")
+        } else {
+          // No session, redirect to login
+          router.push("/?error=no_session")
+        }
+      } catch (error) {
         console.error("Auth callback error:", error)
-        router.push("/login?error=auth-callback-failed")
-        return
-      }
-
-      // Check if user profile exists
-      const { data: profile, error: profileError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", userData.user.id)
-        .single()
-
-      if (profileError || !profile) {
-        // User needs to complete profile
-        router.push("/onboarding")
-      } else {
-        // User already has a profile, redirect to dashboard
-        router.push("/dashboard")
+        router.push("/?error=callback_failed")
       }
     }
 
@@ -41,9 +36,12 @@ export default function AuthCallbackPage() {
   }, [router])
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen">
-      <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-      <p className="mt-4 text-muted-foreground">Completing authentication...</p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50">
+      <div className="text-center space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+        <h2 className="text-xl font-semibold">Completing sign in...</h2>
+        <p className="text-muted-foreground">Please wait while we set up your account.</p>
+      </div>
     </div>
   )
 }
