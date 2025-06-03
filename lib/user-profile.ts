@@ -97,3 +97,5 @@ export function getDisplayName(address: string): string {
 
   return address
 }
+
+export { saveUserProfiles as saveUserProfile }

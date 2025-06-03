@@ -66,3 +66,11 @@ export async function switchToGoodCareNetwork() {
   }
   return false
 }
+
+// AvaCloud configuration for wallet-as-a-service
+export const AVACLOUD_CONFIG = {
+  projectId: process.env.NEXT_PUBLIC_AVACLOUD_PROJECT_ID || "",
+  apiKey: process.env.AVACLOUD_API_KEY || "",
+  network: "mainnet",
+  chainId: CHAIN_CONFIG.chainId,
+}

@@ -10,7 +10,7 @@ interface UserProfileCardProps {
   }
 }
 
-const UserProfileCard: React.FC<UserProfileCardProps> = ({ user }) => {
+export const UserProfileCard: React.FC<UserProfileCardProps> = ({ user }) => {
   return (
     <div className="rounded-md border p-4">
       <h2 className="text-lg font-semibold">{user.name}</h2>
@@ -25,5 +25,3 @@ const UserProfileCard: React.FC<UserProfileCardProps> = ({ user }) => {
     </div>
   )
 }
-
-export default UserProfileCard

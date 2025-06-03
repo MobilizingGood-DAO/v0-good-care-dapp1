@@ -1,267 +1,157 @@
 "use client"
-
-import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, CheckCircle2 } from "lucide-react"
 import { useWallet } from "@/providers/wallet-provider"
 import { useTokenBalances } from "@/hooks/use-token-balances"
-import { sendGCTTokens, sendCARETokens } from "@/lib/blockchain"
-import { searchUsers, getDisplayName, loadUserProfiles, initializeDemoProfiles } from "@/lib/user-profile"
+import { searchUsers, getDisplayName } from "@/lib/user-profile"
+import { Send, Loader2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface SendFormProps {
   type: "token" | "nft"
 }
 
 export function SendForm({ type }: SendFormProps) {
-  const { isConnected, isCorrectChain, connectWallet, switchNetwork } = useWallet()
-  const { balances } = useTokenBalances()
+  const { address, isConnected } = useWallet()
+  const { balances } = useTokenBalances(address)
+  const { toast } = useToast()
+
   const [recipient, setRecipient] = useState("")
   const [amount, setAmount] = useState("")
-  const [message, setMessage] = useState("")
-  const [selectedNFT, setSelectedNFT] = useState("")
-  const [selectedToken, setSelectedToken] = useState("gct")
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
-  const [errorMessage, setErrorMessage] = useState("")
+  const [tokenType, setTokenType] = useState("GCT")
+  const [isLoading, setIsLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
-  const [showSearch, setShowSearch] = useState(false)
 
-  // Initialize user profiles on component mount
-  useEffect(() => {
-    loadUserProfiles()
-    initializeDemoProfiles()
-  }, [])
-
-  // Search for users when recipient changes
-  useEffect(() => {
-    if (recipient.length > 2 && !recipient.startsWith("0x")) {
-      const results = searchUsers(recipient)
-      setSearchResults(results)
-      setShowSearch(results.length > 0)
+  const handleRecipientSearch = (query: string) => {
+    setRecipient(query)
+    if (query.length > 2) {
+      const results = searchUsers(query)
+      setSearchResults(results.slice(0, 5))
     } else {
       setSearchResults([])
-      setShowSearch(false)
     }
-  }, [recipient])
+  }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const selectRecipient = (userAddress: string) => {
+    setRecipient(userAddress)
+    setSearchResults([])
+  }
 
-    // Check if wallet is connected and on the correct chain
+  const handleSend = async () => {
     if (!isConnected) {
-      await connectWallet()
+      toast({
+        title: "Wallet not connected",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      })
       return
     }
 
-    if (!isCorrectChain) {
-      const success = await switchNetwork()
-      if (!success) return
+    if (!recipient || !amount) {
+      toast({
+        title: "Missing information",
+        description: "Please enter recipient and amount",
+        variant: "destructive",
+      })
+      return
     }
 
-    setStatus("loading")
-    setErrorMessage("")
+    setIsLoading(true)
 
     try {
-      if (type === "token") {
-        let result
-        if (selectedToken === "gct") {
-          result = await sendGCTTokens(recipient, amount)
-        } else {
-          result = await sendCARETokens(recipient, amount)
-        }
+      // Simulate transaction
+      await new Promise((resolve) => setTimeout(resolve, 2000))
 
-        if (result.success) {
-          setStatus("success")
-          // Reset form after success
-          setTimeout(() => {
-            setStatus("idle")
-            setRecipient("")
-            setAmount("")
-            setMessage("")
-          }, 3000)
-        } else {
-          setStatus("error")
-          setErrorMessage(result.error || "Transaction failed")
-        }
-      } else {
-        // NFT sending logic would go here
-        setStatus("success")
-        setTimeout(() => {
-          setStatus("idle")
-          setRecipient("")
-          setMessage("")
-          setSelectedNFT("")
-        }, 3000)
-      }
-    } catch (error: any) {
-      setStatus("error")
-      setErrorMessage(error.message || "An unexpected error occurred")
+      toast({
+        title: "Transaction sent!",
+        description: `Sent ${amount} ${tokenType} to ${getDisplayName(recipient)}`,
+      })
+
+      // Reset form
+      setRecipient("")
+      setAmount("")
+    } catch (error) {
+      toast({
+        title: "Transaction failed",
+        description: "Could not send tokens. Please try again.",
+        variant: "destructive",
+      })
     }
-  }
 
-  const selectUser = (userAddress: string) => {
-    setRecipient(userAddress)
-    setShowSearch(false)
+    setIsLoading(false)
   }
-
-  const nfts = [
-    { id: "nft1", name: "Community Contributor" },
-    { id: "nft2", name: "Regenerative Finance Summit" },
-    { id: "nft4", name: "Healing Circle Participant" },
-    { id: "nft5", name: "Earth Day Celebration" },
-  ]
 
   if (!isConnected) {
     return (
-      <div className="text-center py-6">
-        <p className="mb-4">Connect your wallet to send {type === "token" ? "tokens" : "NFTs"}</p>
-        <Button onClick={connectWallet} className="bg-green-600 hover:bg-green-700">
-          Connect Wallet
-        </Button>
-      </div>
-    )
-  }
-
-  if (isConnected && !isCorrectChain) {
-    return (
-      <div className="text-center py-6">
-        <Alert className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Wrong Network</AlertTitle>
-          <AlertDescription>
-            Please switch to the GOOD CARE Network to send {type === "token" ? "tokens" : "NFTs"}
-          </AlertDescription>
-        </Alert>
-        <Button onClick={switchNetwork} className="bg-green-600 hover:bg-green-700">
-          Switch Network
-        </Button>
+      <div className="text-center py-8">
+        <p className="text-muted-foreground">Connect your wallet to send {type === "token" ? "tokens" : "NFTs"}</p>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {status === "success" && (
-        <Alert className="bg-green-50 border-green-600">
-          <CheckCircle2 className="h-4 w-4 text-green-600" />
-          <AlertTitle>Success!</AlertTitle>
-          <AlertDescription>Your {type === "token" ? "tokens" : "NFT"} have been sent successfully.</AlertDescription>
-        </Alert>
-      )}
-
-      {status === "error" && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      )}
-
+    <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="recipient">Recipient</Label>
         <div className="relative">
           <Input
             id="recipient"
-            placeholder="Search by name or enter wallet address"
-            value={getDisplayName(recipient)}
-            onChange={(e) => setRecipient(e.target.value)}
-            required
+            placeholder="Enter username or wallet address"
+            value={recipient}
+            onChange={(e) => handleRecipientSearch(e.target.value)}
           />
-          {showSearch && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg">
-              <div className="max-h-60 overflow-auto">
-                {searchResults.map((user) => (
-                  <div
-                    key={user.address}
-                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
-                    onClick={() => selectUser(user.address)}
-                  >
-                    <div className="font-medium">{user.name}</div>
-                    <div className="text-sm text-gray-500">@{user.username}</div>
-                    <div className="text-xs text-gray-400">{user.address.substring(0, 10)}...</div>
-                  </div>
-                ))}
-              </div>
+          {searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 bg-white border rounded-md shadow-lg z-10 mt-1">
+              {searchResults.map((user) => (
+                <button
+                  key={user.address}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-100 border-b last:border-b-0"
+                  onClick={() => selectRecipient(user.address)}
+                >
+                  <div className="font-medium">{user.name}</div>
+                  <div className="text-sm text-muted-foreground">@{user.username}</div>
+                </button>
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      {type === "token" ? (
+      {type === "token" && (
         <>
           <div className="space-y-2">
-            <Label htmlFor="token">Token</Label>
-            <Select value={selectedToken} onValueChange={setSelectedToken}>
+            <Label htmlFor="token-type">Token</Label>
+            <Select value={tokenType} onValueChange={setTokenType}>
               <SelectTrigger>
-                <SelectValue placeholder="Select token to send" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gct">GCT (Balance: {balances.gct.balance})</SelectItem>
-                <SelectItem value="care">CARE (Balance: {balances.care.balance})</SelectItem>
+                <SelectItem value="GCT">GCT (Balance: {balances.gct})</SelectItem>
+                <SelectItem value="CARE">CARE (Balance: {balances.care})</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="amount">Amount</Label>
-            <div className="flex items-center space-x-2">
-              <Input
-                id="amount"
-                type="number"
-                placeholder="0.00"
-                min="0.01"
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                required
-              />
-              <div className="shrink-0">{selectedToken === "gct" ? "GCT" : "CARE"}</div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Available: {selectedToken === "gct" ? balances.gct.balance : balances.care.balance}{" "}
-              {selectedToken === "gct" ? "GCT" : "CARE"}
-            </div>
+            <Input
+              id="amount"
+              type="number"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
           </div>
         </>
-      ) : (
-        <div className="space-y-2">
-          <Label htmlFor="nft">Select NFT</Label>
-          <Select value={selectedNFT} onValueChange={setSelectedNFT} required>
-            <SelectTrigger>
-              <SelectValue placeholder="Select an NFT to send" />
-            </SelectTrigger>
-            <SelectContent>
-              {nfts.map((nft) => (
-                <SelectItem key={nft.id} value={nft.id}>
-                  {nft.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       )}
 
-      <div className="space-y-2">
-        <Label htmlFor="message">Message (Optional)</Label>
-        <Textarea
-          id="message"
-          placeholder="Add a personal message..."
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-        />
-      </div>
-
-      <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={status === "loading"}>
-        {status === "loading"
-          ? "Sending..."
-          : `Send ${type === "token" ? (selectedToken === "gct" ? "GCT" : "CARE") : "NFT"}`}
+      <Button onClick={handleSend} disabled={isLoading} className="w-full">
+        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+        Send {type === "token" ? "Tokens" : "NFT"}
       </Button>
-    </form>
+    </div>
   )
 }

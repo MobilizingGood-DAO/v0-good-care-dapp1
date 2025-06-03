@@ -1,120 +1,183 @@
 "use client"
-
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Copy, Check, Eye, EyeOff, AlertTriangle, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { useWallet } from "@/providers/wallet-provider"
-import { CHAIN_CONFIG } from "@/lib/blockchain-config"
 import { useTokenBalances } from "@/hooks/use-token-balances"
+import { CHAIN_CONFIG, switchToGoodCareNetwork } from "@/lib/blockchain-config"
+import { Wallet, Copy, ExternalLink, RefreshCw } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export function WalletInfo() {
-  const [copied, setCopied] = useState(false)
-  const [showAddress, setShowAddress] = useState(false)
-  const { address, isConnected, isCorrectChain, connectWallet, switchNetwork } = useWallet()
-  const { balances, isLoading, error } = useTokenBalances()
+  const { address, isConnected, connectWallet, chainId } = useWallet()
+  const { balances, isLoading, refetch } = useTokenBalances(address)
+  const { toast } = useToast()
+  const [copying, setCopying] = useState(false)
 
-  const displayAddress = address
-    ? showAddress
-      ? address
-      : address.substring(0, 6) + "..." + address.substring(address.length - 4)
-    : "Not connected"
+  const copyAddress = async () => {
+    if (!address) return
 
-  const copyToClipboard = () => {
-    if (address) {
-      navigator.clipboard.writeText(address)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+    setCopying(true)
+    try {
+      await navigator.clipboard.writeText(address)
+      toast({
+        title: "Address copied!",
+        description: "Wallet address copied to clipboard",
+      })
+    } catch (error) {
+      toast({
+        title: "Failed to copy",
+        description: "Could not copy address to clipboard",
+        variant: "destructive",
+      })
+    }
+    setCopying(false)
+  }
+
+  const handleNetworkSwitch = async () => {
+    const success = await switchToGoodCareNetwork()
+    if (success) {
+      toast({
+        title: "Network switched!",
+        description: "Connected to GOOD CARE Network",
+      })
+    } else {
+      toast({
+        title: "Network switch failed",
+        description: "Could not switch to GOOD CARE Network",
+        variant: "destructive",
+      })
     }
   }
 
+  const isCorrectNetwork = chainId === CHAIN_CONFIG.chainId
+
+  if (!isConnected) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            Wallet
+          </CardTitle>
+          <CardDescription>Connect your wallet to view balances and send tokens</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={connectWallet} className="w-full">
+            <Wallet className="mr-2 h-4 w-4" />
+            Connect Wallet
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Wallet Details</CardTitle>
-        <CardDescription>Your CARE Card wallet information</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!isConnected ? (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Connect your wallet to view your balance and details.</p>
-            <Button onClick={connectWallet} className="w-full bg-green-600 hover:bg-green-700">
-              Connect Wallet
-            </Button>
+    <div className="space-y-6">
+      {/* Wallet Info */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            Wallet Information
+          </CardTitle>
+          <CardDescription>Your connected wallet details</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Address</p>
+              <p className="text-sm text-muted-foreground font-mono">
+                {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Not connected"}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={copyAddress} disabled={copying}>
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <a
+                  href={`${CHAIN_CONFIG.blockExplorerUrls[0]}/address/${address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            </div>
           </div>
-        ) : (
-          <>
-            {!isCorrectChain && (
-              <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md mb-4">
-                <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                <div className="flex-1 text-sm">
-                  <p>You're not connected to the GOOD CARE Network (Chain ID: {CHAIN_CONFIG.chainId})</p>
-                </div>
-                <Button size="sm" onClick={switchNetwork}>
-                  Switch Network
-                </Button>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Network</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-muted-foreground">{CHAIN_CONFIG.chainName}</p>
+                <Badge variant={isCorrectNetwork ? "default" : "destructive"}>
+                  {isCorrectNetwork ? "Connected" : "Wrong Network"}
+                </Badge>
               </div>
+            </div>
+            {!isCorrectNetwork && (
+              <Button variant="outline" size="sm" onClick={handleNetworkSwitch}>
+                Switch Network
+              </Button>
             )}
+          </div>
+        </CardContent>
+      </Card>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <div className="text-sm font-medium">GCT Balance</div>
-                {isLoading ? (
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Loading...</span>
-                  </div>
-                ) : error ? (
-                  <div className="text-sm text-red-500">{error}</div>
-                ) : (
-                  <div className="text-2xl font-bold">
-                    {balances.gct.balance} {balances.gct.symbol}
-                  </div>
-                )}
+      {/* Token Balances */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Token Balances</span>
+            <Button variant="outline" size="sm" onClick={refetch} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            </Button>
+          </CardTitle>
+          <CardDescription>Your GOOD CARE ecosystem tokens</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 font-bold text-sm">C</span>
+                </div>
+                <div>
+                  <p className="font-medium">CARE</p>
+                  <p className="text-sm text-muted-foreground">Native Token</p>
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">CARE Balance</div>
-                {isLoading ? (
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Loading...</span>
-                  </div>
-                ) : error ? (
-                  <div className="text-sm text-red-500">{error}</div>
-                ) : (
-                  <div className="text-2xl font-bold">
-                    {balances.care.balance} {balances.care.symbol}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Wallet Address</div>
-              <div className="flex items-center space-x-2">
-                <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm">
-                  {displayAddress}
-                </code>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowAddress(!showAddress)}>
-                  {showAddress ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={copyToClipboard} disabled={!address}>
-                  {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-                </Button>
+              <div className="text-right">
+                <p className="font-medium">{balances.care} CARE</p>
+                <p className="text-sm text-muted-foreground">
+                  ≈ ${(Number.parseFloat(balances.care) * 0.1).toFixed(2)}
+                </p>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Network</div>
-              <div className="flex items-center space-x-2">
-                <div className={`h-2 w-2 rounded-full ${isCorrectChain ? "bg-green-600" : "bg-yellow-500"}`}></div>
-                <span>{isCorrectChain ? "GOOD CARE Network" : "Wrong Network"}</span>
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <span className="text-blue-600 font-bold text-sm">G</span>
+                </div>
+                <div>
+                  <p className="font-medium">GCT</p>
+                  <p className="text-sm text-muted-foreground">GOOD CARE Token</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="font-medium">{balances.gct} GCT</p>
+                <p className="text-sm text-muted-foreground">
+                  ≈ ${(Number.parseFloat(balances.gct) * 0.05).toFixed(2)}
+                </p>
               </div>
             </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
