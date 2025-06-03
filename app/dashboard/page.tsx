@@ -1,9 +1,13 @@
+"use client"
+
 import { Suspense } from "react"
 import { EnhancedDailyCheckIn } from "@/components/check-in/enhanced-daily-check-in"
 import { CareLeaderboard } from "@/components/care-leaderboard"
 import { UserProfileCard } from "@/components/user-profile-card"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useRealAuth } from "@/providers/real-auth-provider"
+import { RealAuthForm } from "@/components/real-auth-form"
 
 function DashboardSkeleton() {
   return (
@@ -18,12 +22,30 @@ function DashboardSkeleton() {
   )
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
+  const { user, isLoading } = useRealAuth()
+
+  if (isLoading) {
+    return <DashboardSkeleton />
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-full max-w-md">
+          <RealAuthForm />
+        </div>
+      </div>
+    )
+  }
+
+  const userName = user.user_metadata?.name || user.email?.split("@")[0] || "Friend"
+
   return (
     <div className="container mx-auto px-4 py-8 space-y-8">
       {/* Welcome Header */}
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Welcome to Your Wellness Journey</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Welcome back, {userName}! 👋</h1>
         <p className="text-muted-foreground">
           Take a moment each day to reflect, grow, and earn CARE Points for your mental health journey
         </p>
@@ -116,4 +138,8 @@ export default function DashboardPage() {
       </Card>
     </div>
   )
+}
+
+export default function DashboardPage() {
+  return <DashboardContent />
 }

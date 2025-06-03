@@ -10,8 +10,8 @@ import { Wallet, Copy, ExternalLink, RefreshCw } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 export function WalletInfo() {
-  const { address, isConnected, connectWallet, chainId } = useWallet()
-  const { balances, isLoading, refetch } = useTokenBalances(address)
+  const { address, isConnected, connectWallet, isCorrectChain } = useWallet()
+  const { balances, isLoading, refetch } = useTokenBalances()
   const { toast } = useToast()
   const [copying, setCopying] = useState(false)
 
@@ -50,8 +50,6 @@ export function WalletInfo() {
       })
     }
   }
-
-  const isCorrectNetwork = chainId === CHAIN_CONFIG.chainId
 
   if (!isConnected) {
     return (
@@ -113,12 +111,12 @@ export function WalletInfo() {
               <p className="text-sm font-medium">Network</p>
               <div className="flex items-center gap-2">
                 <p className="text-sm text-muted-foreground">{CHAIN_CONFIG.chainName}</p>
-                <Badge variant={isCorrectNetwork ? "default" : "destructive"}>
-                  {isCorrectNetwork ? "Connected" : "Wrong Network"}
+                <Badge variant={isCorrectChain ? "default" : "destructive"}>
+                  {isCorrectChain ? "Connected" : "Wrong Network"}
                 </Badge>
               </div>
             </div>
-            {!isCorrectNetwork && (
+            {!isCorrectChain && (
               <Button variant="outline" size="sm" onClick={handleNetworkSwitch}>
                 Switch Network
               </Button>

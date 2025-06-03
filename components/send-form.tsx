@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useWallet } from "@/providers/wallet-provider"
 import { useTokenBalances } from "@/hooks/use-token-balances"
-import { searchUsers, getDisplayName } from "@/lib/user-profile"
 import { Send, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
@@ -16,29 +15,13 @@ interface SendFormProps {
 
 export function SendForm({ type }: SendFormProps) {
   const { address, isConnected } = useWallet()
-  const { balances } = useTokenBalances(address)
+  const { balances } = useTokenBalances()
   const { toast } = useToast()
 
   const [recipient, setRecipient] = useState("")
   const [amount, setAmount] = useState("")
   const [tokenType, setTokenType] = useState("GCT")
   const [isLoading, setIsLoading] = useState(false)
-  const [searchResults, setSearchResults] = useState<any[]>([])
-
-  const handleRecipientSearch = (query: string) => {
-    setRecipient(query)
-    if (query.length > 2) {
-      const results = searchUsers(query)
-      setSearchResults(results.slice(0, 5))
-    } else {
-      setSearchResults([])
-    }
-  }
-
-  const selectRecipient = (userAddress: string) => {
-    setRecipient(userAddress)
-    setSearchResults([])
-  }
 
   const handleSend = async () => {
     if (!isConnected) {
@@ -67,7 +50,7 @@ export function SendForm({ type }: SendFormProps) {
 
       toast({
         title: "Transaction sent!",
-        description: `Sent ${amount} ${tokenType} to ${getDisplayName(recipient)}`,
+        description: `Sent ${amount} ${tokenType} to ${recipient}`,
       })
 
       // Reset form
@@ -96,28 +79,12 @@ export function SendForm({ type }: SendFormProps) {
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="recipient">Recipient</Label>
-        <div className="relative">
-          <Input
-            id="recipient"
-            placeholder="Enter username or wallet address"
-            value={recipient}
-            onChange={(e) => handleRecipientSearch(e.target.value)}
-          />
-          {searchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 bg-white border rounded-md shadow-lg z-10 mt-1">
-              {searchResults.map((user) => (
-                <button
-                  key={user.address}
-                  className="w-full text-left px-3 py-2 hover:bg-gray-100 border-b last:border-b-0"
-                  onClick={() => selectRecipient(user.address)}
-                >
-                  <div className="font-medium">{user.name}</div>
-                  <div className="text-sm text-muted-foreground">@{user.username}</div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <Input
+          id="recipient"
+          placeholder="Enter username or wallet address"
+          value={recipient}
+          onChange={(e) => setRecipient(e.target.value)}
+        />
       </div>
 
       {type === "token" && (

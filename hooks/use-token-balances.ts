@@ -1,85 +1,70 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useWallet } from "@txnlab/use-wallet"
-import { useAccount } from "wagmi"
-import { providers, utils, Contract } from "@/lib/mock-ethers"
+import { useWallet } from "@/providers/wallet-provider"
 
 interface TokenBalance {
-  symbol: string
   balance: string
+  symbol: string
+  name: string
   decimals: number
 }
 
-interface UseTokenBalancesResult {
-  balances: TokenBalance[] | null
-  isLoading: boolean
-  error: Error | null
+interface TokenBalances {
+  gct: string
+  care: string
 }
 
-const useTokenBalances = (tokenAddresses: string[], providerUrl: string | undefined): UseTokenBalancesResult => {
-  const { address: wagmiAddress } = useAccount()
-  const { activeAccount } = useWallet()
-  const [balances, setBalances] = useState<TokenBalance[] | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [error, setError] = useState<Error | null>(null)
+export function useTokenBalances() {
+  const { address, isConnected, isCorrectChain } = useWallet()
+  const [balances, setBalances] = useState<TokenBalances>({
+    gct: "0",
+    care: "0",
+  })
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchBalances = async () => {
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        if (!wagmiAddress && !activeAccount?.address) {
-          setBalances(null)
-          return
-        }
-
-        if (!providerUrl) {
-          throw new Error("Provider URL is required.")
-        }
-
-        const ethProvider = new providers.JsonRpcProvider(providerUrl)
-        const signer = ethProvider.getSigner(wagmiAddress || activeAccount?.address)
-
-        const fetchedBalances: TokenBalance[] = []
-
-        for (const tokenAddress of tokenAddresses) {
-          const tokenContract = new Contract(
-            tokenAddress,
-            [
-              "function symbol() view returns (string)",
-              "function balanceOf(address) view returns (uint256)",
-              "function decimals() view returns (uint8)",
-            ],
-            signer,
-          )
-
-          const symbol = await tokenContract.symbol()
-          const decimals = await tokenContract.decimals()
-          const balance = await tokenContract.balanceOf(wagmiAddress || activeAccount?.address)
-          const formattedBalance = utils.formatUnits(balance, decimals)
-
-          fetchedBalances.push({
-            symbol,
-            balance: formattedBalance,
-            decimals,
-          })
-        }
-
-        setBalances(fetchedBalances)
-      } catch (err: any) {
-        setError(err)
-        setBalances(null)
-      } finally {
-        setIsLoading(false)
-      }
+    if (address && isConnected && isCorrectChain) {
+      loadBalances()
     }
+  }, [address, isConnected, isCorrectChain])
 
-    fetchBalances()
-  }, [tokenAddresses, providerUrl, wagmiAddress, activeAccount?.address])
+  const loadBalances = async () => {
+    if (!address) return
 
-  return { balances, isLoading, error }
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      // Mock token balances for demo
+      const mockBalances = {
+        gct: "1000.0",
+        care: "500.0",
+      }
+
+      // Simulate API call delay
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      setBalances(mockBalances)
+    } catch (err: any) {
+      setError(err.message || "Failed to load balances")
+      console.error("Error loading token balances:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const refreshBalances = () => {
+    if (address && isConnected && isCorrectChain) {
+      loadBalances()
+    }
+  }
+
+  return {
+    balances,
+    isLoading,
+    error,
+    refetch: refreshBalances,
+  }
 }
-
-export default useTokenBalances
