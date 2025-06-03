@@ -1,30 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSession } from "@/lib/auth-service"
 
 export async function GET(request: NextRequest) {
   try {
-    const authToken = request.cookies.get("auth_token")?.value
-
-    if (!authToken) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
-    }
-
-    const session = await getSession(authToken)
-
-    if (!session) {
-      return NextResponse.json({ error: "Invalid or expired session" }, { status: 401 })
-    }
-
+    // Mock user data for demo
     return NextResponse.json({
+      success: true,
       user: {
-        id: session.user.id,
-        email: session.user.email,
-        walletAddress: session.user.walletAddress,
-        socialProvider: session.user.socialProvider,
+        id: "demo_user",
+        email: "demo@example.com",
+        username: "Demo User",
+        care_points: 150,
       },
     })
   } catch (error) {
-    console.error("Auth check error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 })
   }
 }

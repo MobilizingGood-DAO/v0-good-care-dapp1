@@ -10,10 +10,32 @@ import {
   fetchAccount,
   search,
   type NetworkStats,
-  type Block,
-  type Transaction,
-  type Account,
 } from "@/lib/explorer-service"
+
+export interface Block {
+  number: number
+  hash: string
+  timestamp: number
+  transactions: number
+  gasUsed: string
+  gasLimit: string
+}
+
+export interface Transaction {
+  hash: string
+  from: string
+  to: string
+  value: string
+  gasPrice: string
+  gasUsed: string
+  timestamp: number
+  status: "success" | "failed"
+}
+
+export interface Account {
+  address: string
+  balance: string
+}
 
 // Hook for network stats
 export function useNetworkStats() {
@@ -236,4 +258,46 @@ export function useSearch() {
   }
 
   return { query, setQuery, performSearch, result, resultType, isLoading, error }
+}
+
+export function useExplorer() {
+  const [latestBlocks, setLatestBlocks] = useState<Block[]>([])
+  const [latestTransactions, setLatestTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Mock data for demo
+    const mockBlocks: Block[] = Array.from({ length: 10 }, (_, i) => ({
+      number: 1000000 - i,
+      hash: `0x${Math.random().toString(16).substring(2, 66)}`,
+      timestamp: Date.now() - i * 15000,
+      transactions: Math.floor(Math.random() * 100),
+      gasUsed: (Math.random() * 8000000).toFixed(0),
+      gasLimit: "8000000",
+    }))
+
+    const mockTransactions: Transaction[] = Array.from({ length: 10 }, (_, i) => ({
+      hash: `0x${Math.random().toString(16).substring(2, 66)}`,
+      from: `0x${Math.random().toString(16).substring(2, 42)}`,
+      to: `0x${Math.random().toString(16).substring(2, 42)}`,
+      value: (Math.random() * 10).toFixed(4),
+      gasPrice: (Math.random() * 50).toFixed(0),
+      gasUsed: (Math.random() * 21000).toFixed(0),
+      timestamp: Date.now() - i * 30000,
+      status: Math.random() > 0.1 ? "success" : "failed",
+    }))
+
+    setLatestBlocks(mockBlocks)
+    setLatestTransactions(mockTransactions)
+    setLoading(false)
+  }, [])
+
+  return {
+    latestBlocks,
+    latestTransactions,
+    loading,
+    getBlock: async (blockNumber: string) => null,
+    getTransaction: async (txHash: string) => null,
+    getAddress: async (address: string) => null,
+  }
 }
