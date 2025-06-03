@@ -8,258 +8,166 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, Mail, Lock, Wallet } from "lucide-react"
 import { useRealAuth } from "@/providers/real-auth-provider"
-import { useToast } from "@/hooks/use-toast"
+import { Loader2, Heart, Wallet } from "lucide-react"
 
 export function RealAuthForm() {
   const { signUp, signIn, signInWithWallet } = useRealAuth()
-  const { toast } = useToast()
 
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [signUpData, setSignUpData] = useState({ email: "", password: "", confirmPassword: "" })
-  const [signInData, setSignInData] = useState({ email: "", password: "" })
+  const [error, setError] = useState("")
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (signUpData.password !== signUpData.confirmPassword) {
-      toast({
-        title: "Passwords don't match",
-        description: "Please make sure your passwords match.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (signUpData.password.length < 6) {
-      toast({
-        title: "Password too short",
-        description: "Password must be at least 6 characters long.",
-        variant: "destructive",
-      })
-      return
-    }
-
     setIsLoading(true)
+    setError("")
 
-    try {
-      const result = await signUp(signUpData.email, signUpData.password)
-
-      if (result.success) {
-        setSignUpData({ email: "", password: "", confirmPassword: "" })
-      } else {
-        toast({
-          title: "Sign up failed",
-          description: result.error || "Something went wrong. Please try again.",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Sign up failed",
-        description: "Something went wrong. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+    const result = await signUp(email, password)
+    if (!result.success) {
+      setError(result.error || "Sign up failed")
     }
+    setIsLoading(false)
   }
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError("")
 
-    try {
-      const result = await signIn(signInData.email, signInData.password)
-
-      if (!result.success) {
-        toast({
-          title: "Sign in failed",
-          description: result.error || "Invalid email or password.",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Sign in failed",
-        description: "Something went wrong. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+    const result = await signIn(email, password)
+    if (!result.success) {
+      setError(result.error || "Sign in failed")
     }
+    setIsLoading(false)
   }
 
   const handleDemoLogin = async () => {
     setIsLoading(true)
-    try {
-      // Generate a demo wallet address
-      const demoWallet = `0x${Math.random().toString(16).slice(2, 42).padEnd(40, "0")}`
-      const result = await signInWithWallet(demoWallet)
+    setError("")
 
-      if (!result.success) {
-        toast({
-          title: "Demo login failed",
-          description: result.error || "Something went wrong.",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Demo login failed",
-        description: "Something went wrong. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+    const demoWallet = `0x${Math.random().toString(16).slice(2, 42)}`
+    const result = await signInWithWallet(demoWallet)
+    if (!result.success) {
+      setError(result.error || "Demo login failed")
     }
+    setIsLoading(false)
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="text-4xl mb-4">🌱</div>
-          <CardTitle className="text-2xl">Welcome to GOOD CARE</CardTitle>
-          <CardDescription>Your daily wellness companion for tracking mood and building healthy habits</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="demo" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="demo">Demo</TabsTrigger>
+      <div className="w-full max-w-md space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-2">
+          <div className="text-6xl">🌱</div>
+          <h1 className="text-3xl font-bold">GOOD CARE</h1>
+          <p className="text-muted-foreground">Your daily wellness companion</p>
+        </div>
+
+        {/* Demo Button */}
+        <Button
+          onClick={handleDemoLogin}
+          disabled={isLoading}
+          className="w-full bg-green-600 hover:bg-green-700"
+          size="lg"
+        >
+          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wallet className="mr-2 h-4 w-4" />}
+          Try Demo (No signup needed)
+        </Button>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-background px-2 text-muted-foreground">Or continue with email</span>
+          </div>
+        </div>
+
+        {/* Auth Tabs */}
+        <Card>
+          <Tabs defaultValue="signin" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="demo" className="space-y-4">
-              <div className="text-center space-y-4">
-                <p className="text-sm text-muted-foreground">Try the app instantly with a demo account</p>
-                <Button onClick={handleDemoLogin} className="w-full" disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating demo account...
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="mr-2 h-4 w-4" />
-                      Try Demo
-                    </>
-                  )}
-                </Button>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="signin" className="space-y-4">
-              <form onSubmit={handleSignIn} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signin-email">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <TabsContent value="signin">
+              <CardHeader>
+                <CardTitle>Welcome back</CardTitle>
+                <CardDescription>Sign in to your GOOD CARE account</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSignIn} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signin-email">Email</Label>
                     <Input
                       id="signin-email"
                       type="email"
-                      placeholder="your@email.com"
-                      value={signInData.email}
-                      onChange={(e) => setSignInData({ ...signInData, email: e.target.value })}
-                      className="pl-10"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       required
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signin-password">Password</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <div className="space-y-2">
+                    <Label htmlFor="signin-password">Password</Label>
                     <Input
                       id="signin-password"
                       type="password"
-                      placeholder="••••••••"
-                      value={signInData.password}
-                      onChange={(e) => setSignInData({ ...signInData, password: e.target.value })}
-                      className="pl-10"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
                       required
                     />
                   </div>
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Signing in...
-                    </>
-                  ) : (
-                    "Sign In"
-                  )}
-                </Button>
-              </form>
+                  {error && <p className="text-sm text-red-600">{error}</p>}
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Heart className="mr-2 h-4 w-4" />}
+                    Sign In
+                  </Button>
+                </form>
+              </CardContent>
             </TabsContent>
 
-            <TabsContent value="signup" className="space-y-4">
-              <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <TabsContent value="signup">
+              <CardHeader>
+                <CardTitle>Create account</CardTitle>
+                <CardDescription>Start your wellness journey today</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSignUp} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email">Email</Label>
                     <Input
                       id="signup-email"
                       type="email"
-                      placeholder="your@email.com"
-                      value={signUpData.email}
-                      onChange={(e) => setSignUpData({ ...signUpData, email: e.target.value })}
-                      className="pl-10"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       required
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Password</Label>
                     <Input
                       id="signup-password"
                       type="password"
-                      placeholder="••••••••"
-                      value={signUpData.password}
-                      onChange={(e) => setSignUpData({ ...signUpData, password: e.target.value })}
-                      className="pl-10"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
                       required
                       minLength={6}
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-confirm">Confirm Password</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-confirm"
-                      type="password"
-                      placeholder="••••••••"
-                      value={signUpData.confirmPassword}
-                      onChange={(e) => setSignUpData({ ...signUpData, confirmPassword: e.target.value })}
-                      className="pl-10"
-                      required
-                      minLength={6}
-                    />
-                  </div>
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating account...
-                    </>
-                  ) : (
-                    "Create Account"
-                  )}
-                </Button>
-              </form>
+                  {error && <p className="text-sm text-red-600">{error}</p>}
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Heart className="mr-2 h-4 w-4" />}
+                    Create Account
+                  </Button>
+                </form>
+              </CardContent>
             </TabsContent>
           </Tabs>
-        </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   )
 }
