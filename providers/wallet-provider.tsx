@@ -1,210 +1,117 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState } from "react"
-import { CHAIN_CONFIG } from "@/lib/blockchain-config"
-import { useToast } from "@/hooks/use-toast"
+import { createContext, useContext, useState, useEffect } from "react"
+import { fetchTokenBalances } from "@/lib/blockchain"
 
 interface WalletContextType {
   address: string | null
+  balance: {
+    gct: string
+    care: string
+  }
   isConnected: boolean
-  isCorrectChain: boolean
-  chainId: number | null
-  connectWallet: () => Promise<void>
-  switchNetwork: () => Promise<boolean>
+  connect: () => Promise<void>
   disconnect: () => void
 }
 
-const WalletContext = createContext<WalletContextType | undefined>(undefined)
+const defaultContext: WalletContextType = {
+  address: null,
+  balance: {
+    gct: "0",
+    care: "0",
+  },
+  isConnected: false,
+  connect: async () => {},
+  disconnect: () => {},
+}
+
+const WalletContext = createContext<WalletContextType>(defaultContext)
+
+export const useWallet = () => {
+  const context = useContext(WalletContext)
+  if (!context) {
+    throw new Error("useWallet must be used within a WalletProvider")
+  }
+  return context
+}
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null)
+  const [balance, setBalance] = useState<{ gct: string; care: string }>({
+    gct: "0",
+    care: "0",
+  })
   const [isConnected, setIsConnected] = useState(false)
-  const [isCorrectChain, setIsCorrectChain] = useState(false)
-  const [chainId, setChainId] = useState<number | null>(null)
-  const { toast } = useToast()
 
+  // Load wallet from localStorage on mount
   useEffect(() => {
-    checkConnection()
+    if (typeof window === "undefined") return
 
-    // Listen for account changes
-    if (typeof window !== "undefined" && window.ethereum) {
-      window.ethereum.on("accountsChanged", handleAccountsChanged)
-      window.ethereum.on("chainChanged", handleChainChanged)
-    }
+    try {
+      const savedAddress = localStorage.getItem("walletAddress")
+      if (savedAddress) {
+        setAddress(savedAddress)
+        setIsConnected(true)
 
-    return () => {
-      if (typeof window !== "undefined" && window.ethereum) {
-        window.ethereum.removeListener("accountsChanged", handleAccountsChanged)
-        window.ethereum.removeListener("chainChanged", handleChainChanged)
+        // Fetch balances
+        fetchTokenBalances(savedAddress).then((balances) => {
+          setBalance({
+            gct: balances.gct.balance,
+            care: balances.care.balance,
+          })
+        })
       }
+    } catch (error) {
+      console.error("Error loading wallet from localStorage:", error)
     }
   }, [])
 
-  const checkConnection = async () => {
+  const connect = async () => {
     try {
-      if (typeof window !== "undefined" && window.ethereum) {
-        const accounts = await window.ethereum.request({ method: "eth_accounts" })
-        if (accounts.length > 0) {
-          setAddress(accounts[0])
-          setIsConnected(true)
-          await checkChain()
-        }
-      }
-    } catch (error) {
-      console.error("Error checking wallet connection:", error)
-    }
-  }
+      // Generate a mock wallet address
+      const mockAddress = `0x${Array(40)
+        .fill(0)
+        .map(() => Math.floor(Math.random() * 16).toString(16))
+        .join("")}`
 
-  const checkChain = async () => {
-    try {
-      if (typeof window !== "undefined" && window.ethereum) {
-        const chainIdHex = await window.ethereum.request({ method: "eth_chainId" })
-        const currentChainId = Number.parseInt(chainIdHex, 16)
-        setChainId(currentChainId)
-        setIsCorrectChain(currentChainId === CHAIN_CONFIG.chainId)
-      }
-    } catch (error) {
-      console.error("Error checking chain:", error)
-    }
-  }
-
-  const handleAccountsChanged = (accounts: string[]) => {
-    if (accounts.length > 0) {
-      setAddress(accounts[0])
+      setAddress(mockAddress)
       setIsConnected(true)
-    } else {
-      setAddress(null)
-      setIsConnected(false)
-    }
-  }
 
-  const handleChainChanged = (chainIdHex: string) => {
-    const currentChainId = Number.parseInt(chainIdHex, 16)
-    setChainId(currentChainId)
-    setIsCorrectChain(currentChainId === CHAIN_CONFIG.chainId)
-  }
+      // Save to localStorage
+      localStorage.setItem("walletAddress", mockAddress)
 
-  const connectWallet = async () => {
-    try {
-      if (typeof window === "undefined" || !window.ethereum) {
-        // Create a demo wallet address for users without MetaMask
-        const demoAddress = `0x${crypto.randomUUID().replace(/-/g, "").slice(0, 40)}`
-        setAddress(demoAddress)
-        setIsConnected(true)
-        setIsCorrectChain(true)
-        setChainId(CHAIN_CONFIG.chainId)
-
-        toast({
-          title: "Demo Wallet Connected",
-          description: "Using demo wallet for testing purposes",
-        })
-        return
-      }
-
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
+      // Fetch mock balances
+      const balances = await fetchTokenBalances(mockAddress)
+      setBalance({
+        gct: balances.gct.balance,
+        care: balances.care.balance,
       })
-
-      if (accounts.length > 0) {
-        setAddress(accounts[0])
-        setIsConnected(true)
-        await checkChain()
-
-        toast({
-          title: "Wallet Connected",
-          description: `Connected to ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`,
-        })
-      }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error connecting wallet:", error)
-      toast({
-        title: "Connection Failed",
-        description: error.message || "Failed to connect wallet",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const switchNetwork = async (): Promise<boolean> => {
-    try {
-      if (typeof window === "undefined" || !window.ethereum) {
-        // For demo mode, just set as correct chain
-        setIsCorrectChain(true)
-        setChainId(CHAIN_CONFIG.chainId)
-        return true
-      }
-
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: CHAIN_CONFIG.chainIdHex }],
-      })
-
-      setIsCorrectChain(true)
-      setChainId(CHAIN_CONFIG.chainId)
-      toast({
-        title: "Network Switched",
-        description: "Successfully switched to GOOD CARE Network",
-      })
-      return true
-    } catch (error: any) {
-      if (error.code === 4902) {
-        // Chain not added to wallet, try to add it
-        try {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [CHAIN_CONFIG],
-          })
-          setIsCorrectChain(true)
-          setChainId(CHAIN_CONFIG.chainId)
-          return true
-        } catch (addError) {
-          console.error("Error adding chain:", addError)
-        }
-      }
-
-      toast({
-        title: "Network Switch Failed",
-        description: error.message || "Failed to switch network",
-        variant: "destructive",
-      })
-      return false
     }
   }
 
   const disconnect = () => {
     setAddress(null)
     setIsConnected(false)
-    setIsCorrectChain(false)
-    setChainId(null)
+    setBalance({ gct: "0", care: "0" })
 
-    toast({
-      title: "Wallet Disconnected",
-      description: "Your wallet has been disconnected",
-    })
+    // Remove from localStorage
+    localStorage.removeItem("walletAddress")
   }
 
   return (
     <WalletContext.Provider
       value={{
         address,
+        balance,
         isConnected,
-        isCorrectChain,
-        chainId,
-        connectWallet,
-        switchNetwork,
+        connect,
         disconnect,
       }}
     >
       {children}
     </WalletContext.Provider>
   )
-}
-
-export function useWallet() {
-  const context = useContext(WalletContext)
-  if (context === undefined) {
-    throw new Error("useWallet must be used within a WalletProvider")
-  }
-  return context
 }
