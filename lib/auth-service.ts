@@ -1,28 +1,12 @@
-import { supabase } from "./supabase"
-
+// Authentication service for managing user sessions and wallet persistence
 export interface AuthUser {
   id: string
-  email: string
-  username?: string
-  name?: string
-  avatar?: string
-  care_points?: number
-  wallet_address?: string
-  created_at?: string
-  social_provider?: string
-  authMethod?: "social" | "wallet" | "email"
+  email?: string
   socialProvider?: string
-  walletAddress?: string
-  isNewUser?: boolean
-}
-
-export interface AuthResult {
-  success: boolean
-  user?: AuthUser
-  error?: string
-  needsUsername?: boolean
-  requiresUsername?: boolean
-  isOffline?: boolean
+  socialId?: string
+  walletAddress: string
+  createdAt: string
+  lastLogin: string
 }
 
 export interface AuthSession {
@@ -32,218 +16,117 @@ export interface AuthSession {
   expiresAt: number
 }
 
-export class AuthService {
-  static async signInWithGoogle(): Promise<AuthResult> {
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
+// In-memory storage for demo (replace with proper database in production)
+const users = new Map<string, AuthUser>()
+const sessions = new Map<string, AuthSession>()
 
-      if (error) throw error
-
-      return { success: true }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  }
-
-  static async signInWithTwitter(): Promise<AuthResult> {
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "twitter",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-
-      if (error) throw error
-
-      return { success: true }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  }
-
-  static async getCurrentUser(): Promise<AuthResult> {
-    try {
-      const { data } = await supabase.auth.getSession()
-
-      if (!data.session?.user) {
-        return { success: false, error: "No active session" }
-      }
-
-      const { data: userData } = await supabase.from("users").select("*").eq("id", data.session.user.id).single()
-
-      const user: AuthUser = userData || {
-        id: data.session.user.id,
-        email: data.session.user.email || "",
-        username: data.session.user.user_metadata?.name || data.session.user.email?.split("@")[0],
-        care_points: 0,
-        created_at: new Date().toISOString(),
-      }
-
-      return { success: true, user }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  }
-
-  static async signOut(): Promise<AuthResult> {
-    try {
-      const { error } = await supabase.auth.signOut()
-      if (error) throw error
-
-      return { success: true }
-    } catch (error: any) {
-      return { success: false, error: error.message }
-    }
-  }
-
-  static saveUser(user: AuthUser) {
-    localStorage.setItem("goodcare_user", JSON.stringify(user))
-  }
-
-  static getCurrentUserFromStorage(): AuthUser | null {
-    try {
-      const stored = localStorage.getItem("goodcare_user")
-      return stored ? JSON.parse(stored) : null
-    } catch {
-      return null
-    }
-  }
-
-  static logout() {
-    localStorage.removeItem("goodcare_user")
-  }
-
-  // Complete user registration with username
-  static async completeRegistration(user: AuthUser, username: string): Promise<AuthResult> {
-    try {
-      // Validate username
-      if (!username || username.length < 3) {
-        return {
-          success: false,
-          error: "Username must be at least 3 characters long",
-        }
-      }
-
-      if (username.length > 20) {
-        return {
-          success: false,
-          error: "Username must be less than 20 characters",
-        }
-      }
-
-      const avatar = user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
-      const now = new Date().toISOString()
-
-      // Create user data
-      const userData = {
-        id: user.id,
-        wallet_address: user.walletAddress || null,
-        email: user.email || null,
-        username,
-        social_provider: user.socialProvider || null,
-        avatar,
-        created_at: now,
-        updated_at: now,
-      }
-
-      // Try to save to database
-      const { data, error } = await supabase.from("users").insert(userData).select().single()
-
-      if (error) {
-        console.error("Database error:", error)
-      }
-
-      // Save to localStorage as backup
-      const localUser = {
-        id: user.id,
-        username,
-        walletAddress: user.walletAddress,
-        email: user.email,
-        authMethod: user.authMethod,
-        socialProvider: user.socialProvider,
-        avatar,
-        createdAt: now,
-      }
-
-      this.saveUser(localUser)
-
-      return {
-        success: true,
-        user: {
-          ...user,
-          username,
-          avatar,
-          isNewUser: false,
-        },
-      }
-    } catch (error) {
-      console.error("Registration error:", error)
-      return {
-        success: false,
-        error: "Failed to complete registration. Please try again.",
-      }
-    }
-  }
+// Generate a unique user ID
+function generateUserId(): string {
+  return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-// Legacy exports for backward compatibility
+// Generate session tokens
+function generateTokens(): { accessToken: string; refreshToken: string } {
+  const accessToken = `access_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`
+  const refreshToken = `refresh_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`
+  return { accessToken, refreshToken }
+}
+
+// Create or get existing user by email
 export async function createOrGetUserByEmail(email: string, walletAddress: string): Promise<AuthUser> {
-  // Mock implementation for backward compatibility
-  const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  // Check if user already exists
+  const existingUser = Array.from(users.values()).find((user) => user.email === email)
 
-  return {
-    id: userId,
-    email,
-    username: email.split("@")[0] || "user",
-    wallet_address: walletAddress,
-    authMethod: "email",
+  if (existingUser) {
+    // Update last login
+    existingUser.lastLogin = new Date().toISOString()
+    users.set(existingUser.id, existingUser)
+    return existingUser
   }
+
+  // Create new user
+  const newUser: AuthUser = {
+    id: generateUserId(),
+    email,
+    walletAddress,
+    createdAt: new Date().toISOString(),
+    lastLogin: new Date().toISOString(),
+  }
+
+  users.set(newUser.id, newUser)
+  return newUser
 }
 
+// Create or get existing user by social provider
 export async function createOrGetUserBySocial(
   provider: string,
   socialId: string,
   email: string | undefined,
   walletAddress: string,
 ): Promise<AuthUser> {
-  // Mock implementation for backward compatibility
-  const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  // Check if user already exists by social ID
+  const existingUser = Array.from(users.values()).find(
+    (user) => user.socialProvider === provider && user.socialId === socialId,
+  )
 
-  return {
-    id: userId,
-    email: email || "",
-    username: email?.split("@")[0] || "user",
-    wallet_address: walletAddress,
-    authMethod: "social",
-    socialProvider: provider,
+  if (existingUser) {
+    // Update last login
+    existingUser.lastLogin = new Date().toISOString()
+    users.set(existingUser.id, existingUser)
+    return existingUser
   }
+
+  // Create new user
+  const newUser: AuthUser = {
+    id: generateUserId(),
+    email,
+    socialProvider: provider,
+    socialId,
+    walletAddress,
+    createdAt: new Date().toISOString(),
+    lastLogin: new Date().toISOString(),
+  }
+
+  users.set(newUser.id, newUser)
+  return newUser
 }
 
+// Create session for user
 export async function createSession(user: AuthUser): Promise<AuthSession> {
-  // Mock implementation for backward compatibility
-  const accessToken = `access_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`
-  const refreshToken = `refresh_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`
+  const { accessToken, refreshToken } = generateTokens()
 
-  return {
+  const session: AuthSession = {
     user,
     accessToken,
     refreshToken,
     expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
   }
+
+  sessions.set(accessToken, session)
+  return session
 }
 
+// Get session by access token
 export async function getSession(accessToken: string): Promise<AuthSession | null> {
-  // Mock implementation for backward compatibility
-  return null
+  const session = sessions.get(accessToken)
+
+  if (!session) return null
+
+  // Check if session is expired
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(accessToken)
+    return null
+  }
+
+  return session
 }
 
+// Logout user (invalidate session)
 export async function logout(accessToken: string): Promise<boolean> {
-  // Mock implementation for backward compatibility
-  return true
+  return sessions.delete(accessToken)
+}
+
+// Get user by ID
+export async function getUserById(userId: string): Promise<AuthUser | null> {
+  return users.get(userId) || null
 }

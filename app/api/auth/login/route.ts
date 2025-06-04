@@ -1,23 +1,63 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { createOrGetUserByEmail, createOrGetUserBySocial, createSession } from "@/lib/auth-service"
+import { loginWithEmail, loginWithSocial } from "@/lib/avacloud-waas"
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json()
+    const body = await request.json()
+    const { method, email, provider, socialId } = body
 
-    // Mock authentication for demo
-    if (email && password) {
-      return NextResponse.json({
-        success: true,
-        user: {
-          id: `user_${Date.now()}`,
-          email,
-          username: email.split("@")[0],
-        },
-      })
+    let user
+    let walletResult
+
+    if (method === "email" && email) {
+      // Create wallet with AvaCloud
+      walletResult = await loginWithEmail(email)
+
+      if (!walletResult.success) {
+        return NextResponse.json({ error: "Failed to create wallet" }, { status: 500 })
+      }
+
+      // Create or get user
+      user = await createOrGetUserByEmail(email, walletResult.address)
+    } else if (method === "social" && provider && socialId) {
+      // Create wallet with AvaCloud
+      walletResult = await loginWithSocial(provider)
+
+      if (!walletResult.success) {
+        return NextResponse.json({ error: "Failed to create wallet" }, { status: 500 })
+      }
+
+      // Create or get user
+      user = await createOrGetUserBySocial(provider, socialId, email, walletResult.address)
+    } else {
+      return NextResponse.json({ error: "Invalid login method or missing parameters" }, { status: 400 })
     }
 
-    return NextResponse.json({ success: false, error: "Invalid credentials" }, { status: 401 })
+    // Create session
+    const session = await createSession(user)
+
+    // Set session cookie
+    const response = NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        walletAddress: user.walletAddress,
+        socialProvider: user.socialProvider,
+      },
+    })
+
+    response.cookies.set("auth_token", session.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 24 * 60 * 60, // 24 hours
+    })
+
+    return response
   } catch (error) {
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 })
+    console.error("Login error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -29,63 +29,6 @@ export interface NFTItem {
   transferable: boolean
 }
 
-export interface NFTContract {
-  address: string
-  type: "ERC721" | "ERC1155"
-  name: string
-  symbol: string
-}
-
-// Mock provider function - no ethers dependency
-export function getProvider() {
-  return {
-    getBalance: async (address: string) => "0",
-    getBlockNumber: async () => 1000000,
-    getBlock: async (blockNumber: number) => null,
-  }
-}
-
-// NFT contract addresses on GOOD CARE Network
-export const NFT_CONTRACTS = {
-  reflections: "0xC28Bd1D69E390beF1547a63Fa705618C41F3B813",
-  badges: "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
-  soulbound: "0x34d85c9cdeb23fa97cb08333b511ac86e1c4e258",
-}
-
-// Known NFT contracts on GOOD CARE Network
-export const ALL_NFT_CONTRACTS: NFTContract[] = [
-  {
-    address: "0xC28Bd1D69E390beF1547a63Fa705618C41F3B813",
-    type: "ERC721",
-    name: "GOOD Reflections",
-    symbol: "GREFL",
-  },
-  {
-    address: "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
-    type: "ERC721",
-    name: "CARE Badges",
-    symbol: "CBADGE",
-  },
-  {
-    address: "0x34d85c9cdeb23fa97cb08333b511ac86e1c4e258",
-    type: "ERC721",
-    name: "Soulbound Achievements",
-    symbol: "SOUL",
-  },
-  {
-    address: "0x1234567890abcdef1234567890abcdef12345678",
-    type: "ERC1155",
-    name: "GOOD Collectibles",
-    symbol: "GCOLL",
-  },
-  {
-    address: "0xabcdef1234567890abcdef1234567890abcdef12",
-    type: "ERC1155",
-    name: "Community Tokens",
-    symbol: "CTOKEN",
-  },
-]
-
 // Mock token balances for MVP
 export async function fetchTokenBalances(address: string): Promise<{
   gct: TokenBalance
@@ -123,38 +66,36 @@ export async function fetchAllNFTs(address: string): Promise<NFTItem[]> {
 
   // Return mock NFTs based on localStorage check-in data
   try {
-    if (typeof window !== "undefined") {
-      const storedData = localStorage.getItem(`checkIn_${address}`)
-      if (storedData) {
-        const parsedData = JSON.parse(storedData)
-        if (parsedData.entries && Array.isArray(parsedData.entries)) {
-          return parsedData.entries
-            .filter((entry: any) => entry.nftTokenId)
-            .map((entry: any, index: number) => ({
-              id: `reflection-${index}`,
-              tokenId: entry.nftTokenId || `${index}`,
-              contractAddress: "0xC28Bd1D69E390beF1547a63Fa705618C41F3B813",
-              metadata: {
-                id: entry.nftTokenId || `${index}`,
-                name: `Daily Reflection - ${entry.date}`,
-                description: entry.reflection || "A daily reflection on the GOOD CARE Network",
-                image: "/placeholder.svg?height=300&width=300&text=Reflection",
-                attributes: [
-                  {
-                    trait_type: "Mood",
-                    value: entry.mood?.toString() || "3",
-                  },
-                  {
-                    trait_type: "Date",
-                    value: entry.date,
-                  },
-                ],
-              },
-              type: "reflection" as const,
-              date: entry.date,
-              transferable: true,
-            }))
-        }
+    const storedData = localStorage.getItem(`checkIn_${address}`)
+    if (storedData) {
+      const parsedData = JSON.parse(storedData)
+      if (parsedData.entries && Array.isArray(parsedData.entries)) {
+        return parsedData.entries
+          .filter((entry: any) => entry.nftTokenId)
+          .map((entry: any, index: number) => ({
+            id: `reflection-${index}`,
+            tokenId: entry.nftTokenId || `${index}`,
+            contractAddress: "0xC28Bd1D69E390beF1547a63Fa705618C41F3B813",
+            metadata: {
+              id: entry.nftTokenId || `${index}`,
+              name: `Daily Reflection - ${entry.date}`,
+              description: entry.reflection || "A daily reflection on the GOOD CARE Network",
+              image: "/placeholder.svg?height=300&width=300&text=Reflection",
+              attributes: [
+                {
+                  trait_type: "Mood",
+                  value: entry.mood?.toString() || "3",
+                },
+                {
+                  trait_type: "Date",
+                  value: entry.date,
+                },
+              ],
+            },
+            type: "reflection" as const,
+            date: entry.date,
+            transferable: true,
+          }))
       }
     }
   } catch (error) {
@@ -310,4 +251,28 @@ export async function fetchTransactionHistory(address: string): Promise<any[]> {
       type: "receive",
     },
   ]
+}
+
+// NFT Contract configurations
+export const NFT_CONTRACTS = {
+  REFLECTION: "0xC28Bd1D69E390beF1547a63Fa705618C41F3B813",
+  BADGE: "0xD39Ce2A4F8B8B5E3C8F9A1B2C3D4E5F6A7B8C9D0",
+  SOULBOUND: "0xE4AF3B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A",
+} as const
+
+// All NFT contracts array for easier iteration
+export const ALL_NFT_CONTRACTS = Object.values(NFT_CONTRACTS)
+
+// Mock provider for MVP (will be replaced with real provider)
+export function getProvider() {
+  return {
+    getNetwork: async () => ({
+      chainId: 1337, // Mock chain ID for GOOD CARE Subnet
+      name: "GOOD CARE Network",
+    }),
+    getBlockNumber: async () => 12345,
+    getBalance: async (address: string) => "1000000000000000000", // 1 ETH in wei
+    call: async (transaction: any) => "0x",
+    estimateGas: async (transaction: any) => "21000",
+  }
 }

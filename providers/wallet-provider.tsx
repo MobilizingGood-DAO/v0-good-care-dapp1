@@ -2,116 +2,250 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
-import { fetchTokenBalances } from "@/lib/blockchain"
+import { CHAIN_CONFIG, switchToGoodCareNetwork } from "@/lib/blockchain-config"
 
-interface WalletContextType {
+// Define types for our context
+type WalletContextType = {
   address: string | null
-  balance: {
-    gct: string
-    care: string
-  }
+  balance: string
   isConnected: boolean
-  connect: () => Promise<void>
-  disconnect: () => void
+  isCorrectChain: boolean
+  isLoading: boolean
+  walletType: "metamask" | "avacloud" | null
+  connectWallet: () => Promise<void>
+  disconnectWallet: () => void
+  switchNetwork: () => Promise<boolean>
+  setAvaCloudWallet: (address: string) => void
 }
 
-const defaultContext: WalletContextType = {
+// Create context with default values
+const WalletContext = createContext<WalletContextType>({
   address: null,
-  balance: {
-    gct: "0",
-    care: "0",
-  },
+  balance: "0",
   isConnected: false,
-  connect: async () => {},
-  disconnect: () => {},
-}
-
-const WalletContext = createContext<WalletContextType>(defaultContext)
-
-export const useWallet = () => {
-  const context = useContext(WalletContext)
-  if (!context) {
-    throw new Error("useWallet must be used within a WalletProvider")
-  }
-  return context
-}
+  isCorrectChain: false,
+  isLoading: false,
+  walletType: null,
+  connectWallet: async () => {},
+  disconnectWallet: () => {},
+  switchNetwork: async () => false,
+  setAvaCloudWallet: () => {},
+})
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null)
-  const [balance, setBalance] = useState<{ gct: string; care: string }>({
-    gct: "0",
-    care: "0",
-  })
+  const [balance, setBalance] = useState("0")
   const [isConnected, setIsConnected] = useState(false)
+  const [isCorrectChain, setIsCorrectChain] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [walletType, setWalletType] = useState<"metamask" | "avacloud" | null>(null)
 
-  // Load wallet from localStorage on mount
+  // Check if wallet is already connected on mount
   useEffect(() => {
-    if (typeof window === "undefined") return
+    checkConnection()
 
-    try {
-      const savedAddress = localStorage.getItem("walletAddress")
-      if (savedAddress) {
-        setAddress(savedAddress)
-        setIsConnected(true)
+    // Listen for account changes (only for MetaMask)
+    if (typeof window !== "undefined" && window.ethereum) {
+      window.ethereum.on("accountsChanged", handleAccountsChanged)
+      window.ethereum.on("chainChanged", handleChainChanged)
+    }
 
-        // Fetch balances
-        fetchTokenBalances(savedAddress).then((balances) => {
-          setBalance({
-            gct: balances.gct.balance,
-            care: balances.care.balance,
-          })
-        })
+    return () => {
+      if (typeof window !== "undefined" && window.ethereum) {
+        window.ethereum.removeListener("accountsChanged", handleAccountsChanged)
+        window.ethereum.removeListener("chainChanged", handleChainChanged)
       }
-    } catch (error) {
-      console.error("Error loading wallet from localStorage:", error)
     }
   }, [])
 
-  const connect = async () => {
-    try {
-      // Generate a mock wallet address
-      const mockAddress = `0x${Array(40)
-        .fill(0)
-        .map(() => Math.floor(Math.random() * 16).toString(16))
-        .join("")}`
-
-      setAddress(mockAddress)
+  // Check if wallet is connected and on the correct chain
+  const checkConnection = async () => {
+    // First check for AvaCloud wallet in localStorage
+    const avaCloudWallet = localStorage.getItem("avacloud_wallet_address")
+    if (avaCloudWallet) {
+      setAddress(avaCloudWallet)
       setIsConnected(true)
+      setIsCorrectChain(true) // AvaCloud wallets are always on the correct chain
+      setWalletType("avacloud")
+      await updateBalance(avaCloudWallet)
+      return
+    }
 
-      // Save to localStorage
-      localStorage.setItem("walletAddress", mockAddress)
+    // Then check for MetaMask
+    if (typeof window !== "undefined" && window.ethereum) {
+      try {
+        // Get connected accounts
+        const accounts = await window.ethereum.request({ method: "eth_accounts" })
 
-      // Fetch mock balances
-      const balances = await fetchTokenBalances(mockAddress)
-      setBalance({
-        gct: balances.gct.balance,
-        care: balances.care.balance,
-      })
-    } catch (error) {
-      console.error("Error connecting wallet:", error)
+        if (accounts.length > 0) {
+          setAddress(accounts[0])
+          setIsConnected(true)
+          setWalletType("metamask")
+
+          // Check if on the correct chain
+          const chainId = await window.ethereum.request({ method: "eth_chainId" })
+          setIsCorrectChain(Number.parseInt(chainId, 16) === CHAIN_CONFIG.chainId)
+
+          // Get balance
+          await updateBalance(accounts[0])
+        }
+      } catch (error) {
+        console.error("Error checking connection:", error)
+      }
     }
   }
 
-  const disconnect = () => {
-    setAddress(null)
-    setIsConnected(false)
-    setBalance({ gct: "0", care: "0" })
+  // Handle account changes (MetaMask only)
+  const handleAccountsChanged = (accounts: string[]) => {
+    if (walletType === "avacloud") return // Don't handle MetaMask events for AvaCloud wallets
 
-    // Remove from localStorage
-    localStorage.removeItem("walletAddress")
+    if (accounts.length === 0) {
+      // User disconnected
+      disconnectWallet()
+    } else {
+      setAddress(accounts[0])
+      setIsConnected(true)
+      updateBalance(accounts[0])
+    }
   }
 
-  return (
-    <WalletContext.Provider
-      value={{
-        address,
-        balance,
-        isConnected,
-        connect,
-        disconnect,
-      }}
-    >
-      {children}
-    </WalletContext.Provider>
-  )
+  // Handle chain changes (MetaMask only)
+  const handleChainChanged = (chainId: string) => {
+    if (walletType === "avacloud") return // Don't handle MetaMask events for AvaCloud wallets
+
+    setIsCorrectChain(Number.parseInt(chainId, 16) === CHAIN_CONFIG.chainId)
+
+    // Reload the page on chain change as recommended by MetaMask
+    window.location.reload()
+  }
+
+  // Set AvaCloud wallet (called after successful registration/login)
+  const setAvaCloudWallet = (walletAddress: string) => {
+    setAddress(walletAddress)
+    setIsConnected(true)
+    setIsCorrectChain(true) // AvaCloud wallets are always on the correct chain
+    setWalletType("avacloud")
+
+    // Store in localStorage for persistence
+    localStorage.setItem("avacloud_wallet_address", walletAddress)
+    localStorage.setItem("wallet_type", "avacloud")
+
+    // Update balance
+    updateBalance(walletAddress)
+  }
+
+  // Update wallet balance
+  const updateBalance = async (walletAddress: string) => {
+    if (walletType === "avacloud") {
+      // For AvaCloud wallets, we'll use mock data for now
+      // In a real implementation, this would call the AvaCloud API
+      setBalance("100.00")
+      return
+    }
+
+    if (typeof window !== "undefined" && window.ethereum) {
+      try {
+        const balance = await window.ethereum.request({
+          method: "eth_getBalance",
+          params: [walletAddress, "latest"],
+        })
+
+        // Convert from wei to GOOD
+        const goodBalance = Number.parseInt(balance, 16) / 1e18
+        setBalance(goodBalance.toFixed(2))
+      } catch (error) {
+        console.error("Error getting balance:", error)
+      }
+    }
+  }
+
+  // Connect wallet (MetaMask)
+  const connectWallet = async () => {
+    if (typeof window !== "undefined" && window.ethereum) {
+      setIsLoading(true)
+
+      try {
+        // Request accounts
+        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" })
+
+        if (accounts.length > 0) {
+          setAddress(accounts[0])
+          setIsConnected(true)
+          setWalletType("metamask")
+
+          // Check if on the correct chain
+          const chainId = await window.ethereum.request({ method: "eth_chainId" })
+          const isCorrect = Number.parseInt(chainId, 16) === CHAIN_CONFIG.chainId
+          setIsCorrectChain(isCorrect)
+
+          // If not on the correct chain, try to switch
+          if (!isCorrect) {
+            await switchToGoodCareNetwork()
+          }
+
+          // Get balance
+          await updateBalance(accounts[0])
+        }
+      } catch (error) {
+        console.error("Error connecting wallet:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    } else {
+      alert("Please install MetaMask or another Ethereum wallet to use this feature.")
+    }
+  }
+
+  // Disconnect wallet
+  const disconnectWallet = () => {
+    setAddress(null)
+    setBalance("0")
+    setIsConnected(false)
+    setWalletType(null)
+
+    // Clear localStorage
+    localStorage.removeItem("avacloud_wallet_address")
+    localStorage.removeItem("wallet_type")
+  }
+
+  // Switch to the GOOD CARE Network (MetaMask only)
+  const switchNetwork = async () => {
+    if (walletType === "avacloud") return true // AvaCloud wallets are always on the correct chain
+
+    const success = await switchToGoodCareNetwork()
+    if (success) {
+      setIsCorrectChain(true)
+    }
+    return success
+  }
+
+  const value = {
+    address,
+    balance,
+    isConnected,
+    isCorrectChain,
+    isLoading,
+    walletType,
+    connectWallet,
+    disconnectWallet,
+    switchNetwork,
+    setAvaCloudWallet,
+  }
+
+  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+}
+
+// Custom hook to use the wallet context
+export const useWallet = () => useContext(WalletContext)
+
+// Add TypeScript declaration for window.ethereum
+declare global {
+  interface Window {
+    ethereum?: {
+      isMetaMask?: boolean
+      request: (request: { method: string; params?: any[] }) => Promise<any>
+      on: (event: string, listener: (...args: any[]) => void) => void
+      removeListener: (event: string, listener: (...args: any[]) => void) => void
+    }
+  }
 }

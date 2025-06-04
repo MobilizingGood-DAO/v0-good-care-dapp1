@@ -1,62 +1,54 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Activity, Users, Zap, TrendingUp } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useNetworkStats } from "@/hooks/use-explorer"
+import { Loader2 } from "lucide-react"
+
+// Convert Gwei to CARE
+function gweiToCARE(gweiAmount: string): string {
+  // 1 CARE = 10^18 wei, 1 Gwei = 10^9 wei, so 1 CARE = 10^9 Gwei
+  const gweiValue = Number.parseFloat(gweiAmount)
+  const careValue = gweiValue / 1_000_000_000
+  return careValue.toFixed(9)
+}
 
 export function NetworkStatsCard() {
-  // Mock network stats
-  const stats = {
-    blockHeight: 1234567,
-    totalTransactions: 9876543,
-    activeValidators: 42,
-    networkHashRate: "1.23 TH/s",
-  }
+  const { stats, isLoading, error } = useNetworkStats()
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Block Height</CardTitle>
-          <Activity className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats.blockHeight.toLocaleString()}</div>
-          <p className="text-xs text-muted-foreground">Latest block</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-          <TrendingUp className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats.totalTransactions.toLocaleString()}</div>
-          <p className="text-xs text-muted-foreground">All time</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Active Validators</CardTitle>
-          <Users className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats.activeValidators}</div>
-          <p className="text-xs text-muted-foreground">Securing network</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Hash Rate</CardTitle>
-          <Zap className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">{stats.networkHashRate}</div>
-          <p className="text-xs text-muted-foreground">Network power</p>
-        </CardContent>
-      </Card>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Network Statistics</CardTitle>
+        <CardDescription>Current GOOD CARE Network stats</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center items-center py-4">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+            <p>Loading network stats...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-4 text-red-500">
+            <p>{error}</p>
+          </div>
+        ) : stats ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Latest Block</p>
+              <p className="text-2xl font-bold">{stats.latestBlock.toLocaleString()}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Gas Price</p>
+              <p className="text-2xl font-bold">{gweiToCARE(stats.gasPrice)} CARE</p>
+              <p className="text-xs text-muted-foreground">{stats.gasPrice} Gwei</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">TPS</p>
+              <p className="text-2xl font-bold">{stats.tps.toFixed(2)}</p>
+            </div>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }
