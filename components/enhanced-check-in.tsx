@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress"
 import { Flame, Star, Clock, Gift } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { EnhancedCheckInService, type UserStreak } from "@/lib/enhanced-checkin-service"
+import { SupabaseAuthService, type AuthUser } from "@/lib/supabase-auth-service"
 
 const MOOD_EMOJIS = [
   { emoji: "😢", label: "Struggling", value: 1 },
@@ -19,11 +20,10 @@ const MOOD_EMOJIS = [
   { emoji: "🤩", label: "Amazing", value: 6 },
 ]
 
-interface EnhancedCheckInProps {
-  userId: string
-}
+type EnhancedCheckInProps = {}
 
-export function EnhancedCheckIn({ userId }: EnhancedCheckInProps) {
+export function EnhancedCheckIn() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [selectedMood, setSelectedMood] = useState<string>("")
   const [reflection, setReflection] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -32,13 +32,33 @@ export function EnhancedCheckIn({ userId }: EnhancedCheckInProps) {
   const [userStreak, setUserStreak] = useState<UserStreak | null>(null)
   const { toast } = useToast()
 
-  const checkInService = new EnhancedCheckInService(userId)
-
   useEffect(() => {
-    loadUserData()
-  }, [userId])
+    // Get current user and set up auth listener
+    const initAuth = async () => {
+      const user = await SupabaseAuthService.getCurrentUser()
+      setAuthUser(user)
+      if (user) {
+        loadUserData(user.id)
+      }
+    }
 
-  const loadUserData = async () => {
+    initAuth()
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = SupabaseAuthService.onAuthStateChange((user) => {
+      setAuthUser(user)
+      if (user) {
+        loadUserData(user.id)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const loadUserData = async (userId: string) => {
+    const checkInService = new EnhancedCheckInService(userId)
     try {
       const [eligibility, streak] = await Promise.all([checkInService.canCheckIn(), checkInService.getUserStreak()])
 
@@ -53,6 +73,15 @@ export function EnhancedCheckIn({ userId }: EnhancedCheckInProps) {
   }
 
   const handleCheckIn = async () => {
+    if (!authUser) {
+      toast({
+        title: "Please sign in",
+        description: "You need to be signed in to check in",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (!selectedMood) {
       toast({
         title: "Please select your mood",
@@ -65,6 +94,7 @@ export function EnhancedCheckIn({ userId }: EnhancedCheckInProps) {
     setIsSubmitting(true)
 
     try {
+      const checkInService = new EnhancedCheckInService(authUser.id)
       const result = await checkInService.checkIn({
         emoji: selectedMood,
         prompt: reflection.trim() || undefined,
@@ -86,7 +116,7 @@ export function EnhancedCheckIn({ userId }: EnhancedCheckInProps) {
         setNextCheckIn(canCheckInAgain)
 
         // Reload user data
-        await loadUserData()
+        await loadUserData(authUser.id)
       } else {
         toast({
           title: "Check-in failed",
@@ -103,6 +133,17 @@ export function EnhancedCheckIn({ userId }: EnhancedCheckInProps) {
     }
 
     setIsSubmitting(false)
+  }
+
+  if (!authUser) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-center">
+          <h3 className="font-semibold mb-2">Please sign in</h3>
+          <p className="text-muted-foreground">You need to be signed in to access check-ins</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   const getMultiplierText = (streak: number) => {

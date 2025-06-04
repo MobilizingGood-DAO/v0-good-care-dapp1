@@ -6,59 +6,124 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { EnhancedCheckIn } from "@/components/enhanced-check-in"
 import { EnhancedWallet } from "@/components/enhanced-wallet"
-import { LeaderboardService, type LeaderboardEntry } from "@/lib/leaderboard-service"
+import { RealLeaderboard } from "@/components/real-leaderboard"
+import { UsernameSetup } from "@/components/username-setup"
 import { WalletService } from "@/lib/wallet-service"
-import { Trophy, Users, Wallet, CheckCircle, TrendingUp } from "lucide-react"
+import { RealLeaderboardService } from "@/lib/real-leaderboard-service"
+import { UsernameService } from "@/lib/username-service"
+import { Users, Wallet, CheckCircle, TrendingUp } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
-// Demo user data - in real app this would come from auth
-const DEMO_USER = {
-  id: "demo-user-123",
-  username: "DemoUser",
-  email: "demo@goodcare.network",
-}
+// Add imports
+import { SupabaseAuthService, type AuthUser } from "@/lib/supabase-auth-service"
 
 export default function DashboardPage() {
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [userRank, setUserRank] = useState<number>(0)
   const [isLoading, setIsLoading] = useState(true)
   const [demoWallet, setDemoWallet] = useState<any>(null)
+  const [needsUsername, setNeedsUsername] = useState(false)
+  const [showUsernameSetup, setShowUsernameSetup] = useState(false)
 
   useEffect(() => {
-    initializeDashboard()
+    initializeAuth()
   }, [])
 
-  const initializeDashboard = async () => {
+  const initializeAuth = async () => {
     try {
-      // Generate demo wallet
-      const wallet = WalletService.generateDemoWallet(DEMO_USER.id)
-      setDemoWallet(wallet)
+      // Get current authenticated user
+      const user = await SupabaseAuthService.getCurrentUser()
+      setAuthUser(user)
 
-      // Load leaderboard data
-      const [globalLeaderboard, userRankData] = await Promise.all([
-        LeaderboardService.getGlobalLeaderboard(10),
-        LeaderboardService.getUserRankAndNearby(DEMO_USER.id, 3),
-      ])
-
-      setLeaderboard(globalLeaderboard)
-      setUserRank(userRankData.userRank)
+      if (user) {
+        await initializeDashboard(user)
+        await checkUsernameStatus(user.id)
+      }
     } catch (error) {
-      console.error("Error initializing dashboard:", error)
+      console.error("Error initializing auth:", error)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const getRankIcon = (rank: number) => {
-    switch (rank) {
-      case 1:
-        return <Trophy className="h-5 w-5 text-yellow-500" />
-      case 2:
-        return <Trophy className="h-5 w-5 text-gray-400" />
-      case 3:
-        return <Trophy className="h-5 w-5 text-amber-600" />
-      default:
-        return <span className="text-sm font-bold text-muted-foreground">#{rank}</span>
+  const checkUsernameStatus = async (userId: string) => {
+    try {
+      const profile = await UsernameService.getUserProfile(userId)
+      if (!profile?.username || profile.username.startsWith("user_")) {
+        setNeedsUsername(true)
+        setShowUsernameSetup(true)
+      }
+    } catch (error) {
+      console.error("Error checking username status:", error)
     }
+  }
+
+  const initializeDashboard = async (user: AuthUser) => {
+    try {
+      // Generate wallet for user
+      const wallet = WalletService.generateDemoWallet(user.id)
+      setDemoWallet(wallet)
+
+      // Load user rank
+      const userRankData = await RealLeaderboardService.getUserRankAndNearby(user.id, 3)
+      setUserRank(userRankData.userRank)
+    } catch (error) {
+      console.error("Error initializing dashboard:", error)
+    }
+  }
+
+  const handleUsernameComplete = (username: string) => {
+    setShowUsernameSetup(false)
+    setNeedsUsername(false)
+    if (authUser) {
+      setAuthUser({ ...authUser, username })
+    }
+  }
+
+  const handleUsernameSkip = () => {
+    setShowUsernameSetup(false)
+    // Don't set needsUsername to false, so we can show the prompt again later
+  }
+
+  // Add loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Add auth check
+  if (!authUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-96">
+          <CardContent className="p-6 text-center">
+            <h3 className="font-semibold mb-2">Please sign in</h3>
+            <p className="text-muted-foreground mb-4">You need to be signed in to access the dashboard</p>
+            <Button onClick={() => (window.location.href = "/login")}>Go to Login</Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Show username setup if needed
+  if (showUsernameSetup) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <UsernameSetup
+          userId={authUser.id}
+          currentUsername={authUser.username}
+          onComplete={handleUsernameComplete}
+          onSkip={handleUsernameSkip}
+        />
+      </div>
+    )
   }
 
   return (
@@ -66,12 +131,19 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Welcome back, {DEMO_USER.username}!</h1>
+          <h1 className="text-3xl font-bold">Welcome back, @{authUser.username || "User"}!</h1>
           <p className="text-muted-foreground">Ready to continue your wellness journey?</p>
         </div>
-        <Badge variant="outline" className="text-sm">
-          Rank #{userRank || "Unranked"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-sm">
+            Rank #{userRank || "Unranked"}
+          </Badge>
+          {needsUsername && (
+            <Button variant="outline" size="sm" onClick={() => setShowUsernameSetup(true)}>
+              Set Username
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Main Tabs */}
@@ -97,7 +169,7 @@ export default function DashboardPage() {
 
         {/* Check-in Tab */}
         <TabsContent value="checkin">
-          <EnhancedCheckIn userId={DEMO_USER.id} />
+          <EnhancedCheckIn />
         </TabsContent>
 
         {/* Wallet Tab */}
@@ -126,70 +198,7 @@ export default function DashboardPage() {
 
         {/* Leaderboard Tab */}
         <TabsContent value="leaderboard">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-yellow-500" />
-                Community Leaderboard
-              </CardTitle>
-              <CardDescription>See how you rank among the GOOD CARE community</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-3">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="animate-pulse">
-                      <div className="h-16 bg-gray-200 rounded-lg"></div>
-                    </div>
-                  ))}
-                </div>
-              ) : leaderboard.length === 0 ? (
-                <div className="text-center py-8">
-                  <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="font-semibold mb-2">No rankings yet</h3>
-                  <p className="text-muted-foreground">Be the first to check in and start earning CARE Points!</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {leaderboard.map((entry) => (
-                    <div
-                      key={entry.userId}
-                      className={`p-4 rounded-lg border-2 ${
-                        entry.rank <= 3
-                          ? "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200"
-                          : "bg-white border-gray-200"
-                      } ${entry.userId === DEMO_USER.id ? "ring-2 ring-blue-500" : ""}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center justify-center w-8 h-8">{getRankIcon(entry.rank)}</div>
-                          <div>
-                            <p className="font-medium">
-                              {entry.username}
-                              {entry.userId === DEMO_USER.id && (
-                                <Badge variant="secondary" className="ml-2 text-xs">
-                                  You
-                                </Badge>
-                              )}
-                            </p>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <span>🔥 {entry.currentStreak} day streak</span>
-                              <span>•</span>
-                              <span>{entry.currentMultiplier}x multiplier</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-lg">{entry.totalPoints}</p>
-                          <p className="text-xs text-muted-foreground">CARE Points</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <RealLeaderboard currentUserId={authUser.id} />
         </TabsContent>
       </Tabs>
     </div>

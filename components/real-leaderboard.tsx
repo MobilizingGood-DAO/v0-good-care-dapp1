@@ -3,27 +3,38 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { RealSupabaseService, type LeaderboardEntry } from "@/lib/real-supabase-service"
-import { useRealAuth } from "@/providers/real-auth-provider"
-import { Trophy, Users, Loader2, Medal, Award } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { RealLeaderboardService, type LeaderboardEntry } from "@/lib/real-leaderboard-service"
+import { Trophy, Users, Loader2, Medal, Award, RefreshCw } from "lucide-react"
 
-export function RealLeaderboard() {
-  const { user } = useRealAuth()
+interface RealLeaderboardProps {
+  currentUserId?: string
+}
+
+export function RealLeaderboard({ currentUserId }: RealLeaderboardProps) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
     loadLeaderboard()
   }, [])
 
-  const loadLeaderboard = async () => {
+  const loadLeaderboard = async (refresh = false) => {
+    if (refresh) {
+      setIsRefreshing(true)
+    } else {
+      setIsLoading(true)
+    }
+
     try {
-      const data = await RealSupabaseService.getLeaderboard(10)
+      const data = await RealLeaderboardService.getGlobalLeaderboard(10)
       setLeaderboard(data)
     } catch (error) {
       console.error("Error loading leaderboard:", error)
     } finally {
       setIsLoading(false)
+      setIsRefreshing(false)
     }
   }
 
@@ -43,11 +54,11 @@ export function RealLeaderboard() {
   const getRankColor = (rank: number) => {
     switch (rank) {
       case 1:
-        return "bg-yellow-50 border-yellow-200"
+        return "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200"
       case 2:
-        return "bg-gray-50 border-gray-200"
+        return "bg-gradient-to-r from-gray-50 to-slate-50 border-gray-200"
       case 3:
-        return "bg-amber-50 border-amber-200"
+        return "bg-gradient-to-r from-amber-50 to-yellow-50 border-amber-200"
       default:
         return "bg-white border-gray-200"
     }
@@ -63,7 +74,10 @@ export function RealLeaderboard() {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center p-8">
-          <Loader2 className="h-6 w-6 animate-spin" />
+          <div className="text-center">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">Loading leaderboard...</p>
+          </div>
         </CardContent>
       </Card>
     )
@@ -72,25 +86,33 @@ export function RealLeaderboard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5" />
-          Community Leaderboard
-        </CardTitle>
-        <CardDescription>See how you rank among the GOOD CARE community</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-yellow-500" />
+              Community Leaderboard
+            </CardTitle>
+            <CardDescription>Top performers in the GOOD CARE community</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => loadLeaderboard(true)} disabled={isRefreshing}>
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {leaderboard.length === 0 ? (
           <div className="text-center py-8">
             <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No community members yet. Be the first to check in!</p>
+            <h3 className="font-semibold mb-2">No rankings yet</h3>
+            <p className="text-muted-foreground">Be the first to check in and start earning CARE Points!</p>
           </div>
         ) : (
           <div className="space-y-3">
             {leaderboard.map((entry) => (
               <div
-                key={entry.user_id}
+                key={entry.userId}
                 className={`p-4 rounded-lg border-2 ${getRankColor(entry.rank)} ${
-                  entry.user_id === user?.id ? "ring-2 ring-primary" : ""
+                  entry.userId === currentUserId ? "ring-2 ring-blue-500" : ""
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -98,23 +120,24 @@ export function RealLeaderboard() {
                     <div className="flex items-center justify-center w-8 h-8">{getRankIcon(entry.rank)}</div>
                     <div>
                       <p className="font-medium">
-                        {entry.username}
-                        {entry.user_id === user?.id && (
+                        @{entry.username}
+                        {entry.userId === currentUserId && (
                           <Badge variant="secondary" className="ml-2 text-xs">
                             You
                           </Badge>
                         )}
                       </p>
-                      <p className="text-sm text-muted-foreground">Level {entry.level}</p>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span>🔥 {entry.currentStreak} current</span>
+                        <span>•</span>
+                        <span>🏆 {entry.longestStreak} longest</span>
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-lg">{entry.total_points}</p>
+                    <p className="font-bold text-lg">{entry.totalPoints}</p>
                     <p className="text-xs text-muted-foreground">CARE Points</p>
                   </div>
-                </div>
-                <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
-                  <span>🔥 {entry.current_streak} day streak</span>
                 </div>
               </div>
             ))}

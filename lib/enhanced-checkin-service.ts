@@ -49,30 +49,29 @@ export class EnhancedCheckInService {
         return { canCheckIn: true }
       }
 
-      const lastCheckInTime = new Date(lastCheckIn.timestamp)
       const now = new Date()
-      const timeDiff = now.getTime() - lastCheckInTime.getTime()
-      const eightHours = 8 * 60 * 60 * 1000
+      const lastCheckinTime = new Date(lastCheckIn.timestamp)
+      const hoursSince = (now.getTime() - lastCheckinTime.getTime()) / (1000 * 60 * 60)
 
-      if (timeDiff < eightHours) {
-        const nextCheckIn = new Date(lastCheckInTime.getTime() + eightHours)
+      if (hoursSince >= 8) {
+        return { canCheckIn: true }
+      } else {
+        const nextCheckIn = new Date(lastCheckinTime.getTime() + 8 * 60 * 60 * 1000)
         return {
           canCheckIn: false,
           nextCheckIn: nextCheckIn.toISOString(),
         }
       }
-
-      return { canCheckIn: true }
     } catch (error) {
       console.error("Error checking check-in eligibility:", error)
       return { canCheckIn: true } // Allow check-in on error
     }
   }
 
-  // Perform check-in with streak calculation
+  // Perform check-in with streak calculation using Supabase RPC
   async checkIn(data: CheckInData): Promise<CheckInResult> {
     try {
-      // First check if user can check in
+      // First check if user can check in (8-hour cooldown)
       const eligibility = await this.canCheckIn()
       if (!eligibility.canCheckIn) {
         return {
@@ -81,46 +80,54 @@ export class EnhancedCheckInService {
         }
       }
 
-      // Calculate streak
-      const streakData = await this.calculateStreak()
-
-      // Calculate points
+      // Calculate base points (emoji + prompt)
       const basePoints = 10 // Base points for emoji selection
       const bonusPoints = data.prompt ? 5 : 0 // Bonus for reflection prompt
-      const multiplier = this.getMultiplier(streakData.newStreak)
-      const totalPoints = Math.floor((basePoints + bonusPoints) * multiplier)
+      const totalBasePoints = basePoints + bonusPoints
 
-      // Insert check-in record
+      // Call Supabase RPC function to handle streak logic and points
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("update_user_streak", {
+        uid: this.userId,
+        base_points: totalBasePoints,
+      })
+
+      if (rpcError) {
+        console.error("Error calling update_user_streak RPC:", rpcError)
+        throw rpcError
+      }
+
+      // Insert the detailed check-in record
       const { data: checkInRecord, error: checkInError } = await supabase
         .from("checkins")
         .insert({
           user_id: this.userId,
           emoji: data.emoji,
           prompt: data.prompt,
-          streak_days: streakData.newStreak,
+          streak_days: rpcResult.new_streak,
           base_points: basePoints,
           bonus_points: bonusPoints,
-          multiplier: multiplier,
+          multiplier: rpcResult.multiplier,
           timestamp: data.timestamp,
         })
         .select()
         .single()
 
       if (checkInError) {
+        console.error("Error inserting check-in record:", checkInError)
         throw checkInError
       }
 
-      // Calculate next check-in time
+      // Calculate next check-in time (8 hours from now)
       const nextCheckIn = new Date(new Date(data.timestamp).getTime() + 8 * 60 * 60 * 1000)
 
       return {
         success: true,
         data: {
-          streakDays: streakData.newStreak,
+          streakDays: rpcResult.new_streak,
           basePoints,
           bonusPoints,
-          multiplier,
-          totalPoints,
+          multiplier: rpcResult.multiplier,
+          totalPoints: rpcResult.total_points_earned,
           canCheckInAgain: nextCheckIn.toISOString(),
         },
       }
