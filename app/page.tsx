@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,8 +8,38 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
-import { supabase } from "@/lib/supabase"
-import { Heart, Users, Trophy, TrendingUp, Wallet, Loader2, User, LogOut, Send } from "lucide-react"
+import { Heart, Users, Trophy, TrendingUp, Wallet, Loader2, User, LogOut, Send, Copy } from "lucide-react"
+
+// Simple local storage auth - no external dependencies
+const LocalAuth = {
+  getCurrentUser: () => {
+    if (typeof window === "undefined") return null
+    try {
+      const user = localStorage.getItem("goodcare_user")
+      return user ? JSON.parse(user) : null
+    } catch {
+      return null
+    }
+  },
+
+  saveUser: (user: any) => {
+    if (typeof window === "undefined") return
+    try {
+      localStorage.setItem("goodcare_user", JSON.stringify(user))
+    } catch {
+      // Ignore storage errors
+    }
+  },
+
+  removeUser: () => {
+    if (typeof window === "undefined") return
+    try {
+      localStorage.removeItem("goodcare_user")
+    } catch {
+      // Ignore storage errors
+    }
+  },
+}
 
 export default function HomePage() {
   const [isLoading, setIsLoading] = useState(true)
@@ -25,23 +54,13 @@ export default function HomePage() {
   const [sendAddress, setSendAddress] = useState("")
   const { toast } = useToast()
 
-  // Check for existing session on load
+  // Check for existing session on load - client-side only
   useEffect(() => {
-    async function checkSession() {
+    const checkSession = () => {
       try {
-        const { data } = await supabase.auth.getSession()
-        if (data.session?.user) {
-          const { data: userData } = await supabase.from("users").select("*").eq("id", data.session.user.id).single()
-
-          setUser(
-            userData || {
-              id: data.session.user.id,
-              email: data.session.user.email,
-              username: data.session.user.email?.split("@")[0] || "User",
-              care_points: 0,
-              created_at: new Date().toISOString(),
-            },
-          )
+        const localUser = LocalAuth.getCurrentUser()
+        if (localUser) {
+          setUser(localUser)
         }
       } catch (error) {
         console.error("Error checking session:", error)
@@ -50,44 +69,71 @@ export default function HomePage() {
       }
     }
 
-    checkSession()
+    // Only run on client side
+    if (typeof window !== "undefined") {
+      checkSession()
+    } else {
+      setIsLoading(false)
+    }
   }, [])
 
-  // Sign in function
-  async function handleSignIn(e: React.FormEvent) {
+  // Copy to clipboard function
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement("textarea")
+        textArea.value = text
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        document.execCommand("copy")
+        document.body.removeChild(textArea)
+      }
+
+      toast({
+        title: "Copied!",
+        description: "Wallet address copied to clipboard",
+      })
+    } catch (err) {
+      console.error("Failed to copy: ", err)
+      toast({
+        title: "Copy failed",
+        description: "Please copy manually",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Sign in function - local only for deployment safety
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoginLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      // Create local user account
+      const userData = {
+        id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         email,
-        password,
-      })
-
-      if (error) throw error
-
-      if (data.user) {
-        const { data: userData } = await supabase.from("users").select("*").eq("id", data.user.id).single()
-
-        setUser(
-          userData || {
-            id: data.user.id,
-            email: data.user.email,
-            username: data.user.email?.split("@")[0] || "User",
-            care_points: 0,
-            created_at: new Date().toISOString(),
-          },
-        )
-
-        toast({
-          title: "Welcome back!",
-          description: "You've successfully signed in.",
-        })
+        username: email.split("@")[0] || "User",
+        care_points: Math.floor(Math.random() * 100),
+        created_at: new Date().toISOString(),
+        wallet_address: `0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`,
       }
+
+      setUser(userData)
+      LocalAuth.saveUser(userData)
+
+      toast({
+        title: "Welcome!",
+        description: "You've successfully signed in to GOOD CARE.",
+      })
     } catch (error: any) {
       toast({
         title: "Error signing in",
-        description: error.message,
+        description: "Please try again",
         variant: "destructive",
       })
     } finally {
@@ -95,27 +141,32 @@ export default function HomePage() {
     }
   }
 
-  // Sign up function
-  async function handleSignUp(e: React.FormEvent) {
+  // Sign up function - local only
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoginLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const userData = {
+        id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         email,
-        password,
-      })
+        username: email.split("@")[0] || "User",
+        care_points: 0,
+        created_at: new Date().toISOString(),
+        wallet_address: `0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`,
+      }
 
-      if (error) throw error
+      setUser(userData)
+      LocalAuth.saveUser(userData)
 
       toast({
         title: "Account created!",
-        description: "Please check your email to verify your account.",
+        description: "Welcome to GOOD CARE!",
       })
     } catch (error: any) {
       toast({
-        title: "Error signing up",
-        description: error.message,
+        title: "Error creating account",
+        description: "Please try again",
         variant: "destructive",
       })
     } finally {
@@ -124,8 +175,8 @@ export default function HomePage() {
   }
 
   // Sign out function
-  async function handleSignOut() {
-    await supabase.auth.signOut()
+  const handleSignOut = () => {
+    LocalAuth.removeUser()
     setUser(null)
     toast({
       title: "Signed out",
@@ -134,7 +185,7 @@ export default function HomePage() {
   }
 
   // Demo login
-  async function handleDemoLogin() {
+  const handleDemoLogin = () => {
     setLoginLoading(true)
 
     try {
@@ -144,10 +195,11 @@ export default function HomePage() {
         username: "Demo User",
         care_points: Math.floor(Math.random() * 500),
         created_at: new Date().toISOString(),
-        wallet_address: `0x${Math.random().toString(36).substring(2, 10)}${Math.random().toString(36).substring(2, 10)}`,
+        wallet_address: `0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`,
       }
 
       setUser(demoUser)
+      LocalAuth.saveUser(demoUser)
 
       toast({
         title: "Demo mode activated",
@@ -166,18 +218,20 @@ export default function HomePage() {
   }
 
   // Handle check-in submission
-  async function handleCheckIn() {
+  const handleCheckIn = () => {
     if (!selectedMood) return
 
     setCheckInLoading(true)
 
     try {
       const points = Math.floor(Math.random() * 20) + 10
+      const updatedUser = {
+        ...user,
+        care_points: (user.care_points || 0) + points,
+      }
 
-      setUser((prev) => ({
-        ...prev,
-        care_points: (prev.care_points || 0) + points,
-      }))
+      setUser(updatedUser)
+      LocalAuth.saveUser(updatedUser)
 
       toast({
         title: "Check-in recorded!",
@@ -198,7 +252,7 @@ export default function HomePage() {
   }
 
   // Handle token send
-  async function handleSendTokens() {
+  const handleSendTokens = () => {
     if (!sendAmount || !sendAddress) return
 
     try {
@@ -243,11 +297,31 @@ export default function HomePage() {
             <CardDescription>Your wellness journey starts here</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="login" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-2">
+            <Tabs defaultValue="demo" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="demo">Demo</TabsTrigger>
                 <TabsTrigger value="login">Login</TabsTrigger>
                 <TabsTrigger value="signup">Sign Up</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="demo">
+                <div className="space-y-4 text-center">
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-medium">Try GOOD CARE</h3>
+                    <p className="text-sm text-muted-foreground">Experience the platform with a demo account</p>
+                  </div>
+                  <Button onClick={handleDemoLogin} disabled={loginLoading} className="w-full">
+                    {loginLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Starting demo...
+                      </>
+                    ) : (
+                      "🚀 Start Demo"
+                    )}
+                  </Button>
+                </div>
+              </TabsContent>
 
               <TabsContent value="login">
                 <form onSubmit={handleSignIn} className="space-y-4">
@@ -318,19 +392,6 @@ export default function HomePage() {
                   </Button>
                 </form>
               </TabsContent>
-
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="bg-white px-2 text-gray-500">or</span>
-                </div>
-              </div>
-
-              <Button variant="outline" className="w-full" onClick={handleDemoLogin} disabled={loginLoading}>
-                🚀 Try Demo Mode
-              </Button>
             </Tabs>
           </CardContent>
         </Card>
@@ -343,40 +404,23 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+          <div className="flex-1">
             <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">🌱 GOOD CARE</h1>
             <p className="text-gray-600">Welcome, {user.username || user.email?.split("@")[0] || "Friend"}! 👋</p>
             {user.wallet_address && (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <span>Wallet:</span>
-                <code className="bg-gray-100 px-2 py-1 rounded">{user.wallet_address}</code>
+              <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
+                <span className="hidden sm:inline">Wallet:</span>
+                <code className="bg-gray-100 px-2 py-1 rounded text-xs break-all max-w-[200px] sm:max-w-none">
+                  {user.wallet_address}
+                </code>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6"
-                  onClick={() => {
-                    navigator.clipboard.writeText(user.wallet_address)
-                    toast({
-                      title: "Copied!",
-                      description: "Wallet address copied to clipboard",
-                    })
-                  }}
+                  className="h-6 w-6 flex-shrink-0"
+                  onClick={() => copyToClipboard(user.wallet_address)}
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                  </svg>
+                  <Copy className="h-3 w-3" />
                 </Button>
               </div>
             )}
@@ -388,14 +432,14 @@ export default function HomePage() {
         </div>
 
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
                 <Heart className="h-5 w-5 text-red-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">CARE Points</p>
-                  <p className="text-2xl font-bold">{user.care_points || 0}</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">CARE Points</p>
+                  <p className="text-xl sm:text-2xl font-bold">{user.care_points || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -405,8 +449,8 @@ export default function HomePage() {
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-green-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Level</p>
-                  <p className="text-2xl font-bold">{Math.floor((user.care_points || 0) / 100) + 1}</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Level</p>
+                  <p className="text-xl sm:text-2xl font-bold">{Math.floor((user.care_points || 0) / 100) + 1}</p>
                 </div>
               </div>
             </CardContent>
@@ -416,8 +460,8 @@ export default function HomePage() {
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-blue-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Community</p>
-                  <p className="text-2xl font-bold">Active</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Community</p>
+                  <p className="text-xl sm:text-2xl font-bold">Active</p>
                 </div>
               </div>
             </CardContent>
@@ -427,8 +471,8 @@ export default function HomePage() {
               <div className="flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-yellow-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Rank</p>
-                  <p className="text-2xl font-bold">#--</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Rank</p>
+                  <p className="text-xl sm:text-2xl font-bold">#--</p>
                 </div>
               </div>
             </CardContent>
@@ -438,25 +482,27 @@ export default function HomePage() {
         {/* Main Content */}
         <Tabs defaultValue="checkin" className="space-y-6">
           <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="checkin" className="flex items-center gap-2">
-              <Heart className="h-4 w-4" />
-              Check-in
+            <TabsTrigger value="checkin" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+              <Heart className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Check-in</span>
+              <span className="sm:hidden">Check</span>
             </TabsTrigger>
-            <TabsTrigger value="wallet" className="flex items-center gap-2">
-              <Wallet className="h-4 w-4" />
-              Wallet
+            <TabsTrigger value="wallet" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+              <Wallet className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Wallet</span>
             </TabsTrigger>
-            <TabsTrigger value="send" className="flex items-center gap-2">
-              <Send className="h-4 w-4" />
-              Send
+            <TabsTrigger value="send" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+              <Send className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Send</span>
             </TabsTrigger>
-            <TabsTrigger value="community" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Community
+            <TabsTrigger value="community" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+              <Users className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Community</span>
+              <span className="sm:hidden">Comm</span>
             </TabsTrigger>
-            <TabsTrigger value="profile" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Profile
+            <TabsTrigger value="profile" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+              <User className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Profile</span>
             </TabsTrigger>
           </TabsList>
 
@@ -483,13 +529,13 @@ export default function HomePage() {
                       <button
                         key={mood.value}
                         onClick={() => setSelectedMood(mood.value)}
-                        className={`p-3 rounded-lg border-2 transition-all ${
+                        className={`p-2 sm:p-3 rounded-lg border-2 transition-all ${
                           selectedMood === mood.value
                             ? "border-primary bg-primary/10"
                             : "border-gray-200 hover:border-gray-300"
                         }`}
                       >
-                        <div className="text-2xl mb-1">{mood.emoji}</div>
+                        <div className="text-xl sm:text-2xl mb-1">{mood.emoji}</div>
                         <div className="text-xs font-medium">{mood.label}</div>
                       </button>
                     ))}
@@ -660,48 +706,29 @@ export default function HomePage() {
                 <CardDescription>Manage your GOOD CARE profile and preferences</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium">Username</label>
                     <p className="text-lg">{user.username || user.email?.split("@")[0]}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Email</label>
-                    <p className="text-lg">{user.email}</p>
+                    <p className="text-lg break-all">{user.email}</p>
                   </div>
-                  <div>
+                  <div className="col-span-1 md:col-span-2">
                     <label className="text-sm font-medium">Wallet Address</label>
                     {user.wallet_address ? (
                       <div className="flex items-center gap-2 mt-1">
-                        <code className="bg-gray-100 px-2 py-1 rounded text-xs sm:text-sm break-all">
+                        <code className="bg-gray-100 px-2 py-1 rounded text-xs break-all flex-1">
                           {user.wallet_address}
                         </code>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 flex-shrink-0"
-                          onClick={() => {
-                            navigator.clipboard.writeText(user.wallet_address)
-                            toast({
-                              title: "Copied!",
-                              description: "Wallet address copied to clipboard",
-                            })
-                          }}
+                          className="h-8 w-8 flex-shrink-0"
+                          onClick={() => copyToClipboard(user.wallet_address)}
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                          </svg>
+                          <Copy className="h-4 w-4" />
                         </Button>
                       </div>
                     ) : (
