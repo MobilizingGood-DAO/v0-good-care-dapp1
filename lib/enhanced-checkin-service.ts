@@ -1,4 +1,5 @@
 import { supabase } from "./supabase"
+import { EmojiSuggestionsService, type EmojiSuggestion } from "./emoji-suggestions-service"
 
 export interface CheckInData {
   emoji: string
@@ -14,7 +15,9 @@ export interface CheckInResult {
     bonusPoints: number
     multiplier: number
     totalPoints: number
-    canCheckInAgain: string // ISO timestamp
+    canCheckInAgain: string
+    suggestions: EmojiSuggestion[]
+    emojiRating: number
   }
   error?: string
 }
@@ -32,6 +35,18 @@ export class EnhancedCheckInService {
 
   constructor(userId: string) {
     this.userId = userId
+  }
+
+  // Map emoji to rating
+  private getEmojiRating(emoji: string): number {
+    const emojiRatingMap: Record<string, number> = {
+      "😢": 1,
+      "😕": 2,
+      "😐": 3,
+      "😊": 4,
+      "😄": 5,
+    }
+    return emojiRatingMap[emoji] || 3
   }
 
   // Check if user can check in (8-hour cooldown)
@@ -80,6 +95,11 @@ export class EnhancedCheckInService {
         }
       }
 
+      // Get emoji rating and suggestions
+      const emojiRating = this.getEmojiRating(data.emoji)
+      const suggestions = EmojiSuggestionsService.getSuggestionsForRating(emojiRating, 2)
+      const selectedSuggestion = suggestions[0]?.text || null
+
       // Calculate base points (emoji + prompt)
       const basePoints = 10 // Base points for emoji selection
       const bonusPoints = data.prompt ? 5 : 0 // Bonus for reflection prompt
@@ -96,13 +116,15 @@ export class EnhancedCheckInService {
         throw rpcError
       }
 
-      // Insert the detailed check-in record
+      // Insert the detailed check-in record with emoji rating and suggestion
       const { data: checkInRecord, error: checkInError } = await supabase
         .from("checkins")
         .insert({
           user_id: this.userId,
           emoji: data.emoji,
+          emoji_rating: emojiRating,
           prompt: data.prompt,
+          suggestion: selectedSuggestion,
           streak_days: rpcResult.new_streak,
           base_points: basePoints,
           bonus_points: bonusPoints,
@@ -129,6 +151,8 @@ export class EnhancedCheckInService {
           multiplier: rpcResult.multiplier,
           totalPoints: rpcResult.total_points_earned,
           canCheckInAgain: nextCheckIn.toISOString(),
+          suggestions,
+          emojiRating,
         },
       }
     } catch (error) {
@@ -138,50 +162,6 @@ export class EnhancedCheckInService {
         error: error instanceof Error ? error.message : "Check-in failed",
       }
     }
-  }
-
-  // Calculate user's current streak
-  private async calculateStreak(): Promise<{ currentStreak: number; newStreak: number }> {
-    try {
-      // Get user's current stats
-      const { data: userStats } = await supabase
-        .from("user_stats")
-        .select("current_streak, last_checkin_date")
-        .eq("user_id", this.userId)
-        .single()
-
-      const today = new Date().toISOString().split("T")[0]
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-
-      if (!userStats || !userStats.last_checkin_date) {
-        // First check-in ever
-        return { currentStreak: 0, newStreak: 1 }
-      }
-
-      const lastCheckInDate = userStats.last_checkin_date
-
-      if (lastCheckInDate === today) {
-        // Already checked in today (shouldn't happen due to 8-hour rule, but just in case)
-        return { currentStreak: userStats.current_streak, newStreak: userStats.current_streak }
-      } else if (lastCheckInDate === yesterday) {
-        // Continuing streak
-        return { currentStreak: userStats.current_streak, newStreak: userStats.current_streak + 1 }
-      } else {
-        // Streak broken, starting new
-        return { currentStreak: userStats.current_streak, newStreak: 1 }
-      }
-    } catch (error) {
-      console.error("Error calculating streak:", error)
-      return { currentStreak: 0, newStreak: 1 }
-    }
-  }
-
-  // Get multiplier based on streak
-  private getMultiplier(streakDays: number): number {
-    if (streakDays >= 14) return 2.0
-    if (streakDays >= 7) return 1.5
-    if (streakDays >= 3) return 1.25
-    return 1.0
   }
 
   // Get user's streak information
@@ -218,7 +198,7 @@ export class EnhancedCheckInService {
     }
   }
 
-  // Get check-in history
+  // Get check-in history with suggestions
   async getCheckInHistory(limit = 30): Promise<any[]> {
     try {
       const { data: checkIns } = await supabase
@@ -232,6 +212,30 @@ export class EnhancedCheckInService {
     } catch (error) {
       console.error("Error fetching check-in history:", error)
       return []
+    }
+  }
+
+  // Get emoji rating analytics
+  async getEmojiAnalytics(days = 30): Promise<Record<number, number>> {
+    try {
+      const { data: checkIns } = await supabase
+        .from("checkins")
+        .select("emoji_rating")
+        .eq("user_id", this.userId)
+        .gte("timestamp", new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString())
+
+      const analytics: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+
+      checkIns?.forEach((checkIn) => {
+        if (checkIn.emoji_rating) {
+          analytics[checkIn.emoji_rating]++
+        }
+      })
+
+      return analytics
+    } catch (error) {
+      console.error("Error fetching emoji analytics:", error)
+      return { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
     }
   }
 }

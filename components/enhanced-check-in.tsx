@@ -10,6 +10,7 @@ import { Flame, Star, Clock, Gift } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { EnhancedCheckInService, type UserStreak } from "@/lib/enhanced-checkin-service"
 import { SupabaseAuthService, type AuthUser } from "@/lib/supabase-auth-service"
+import { SuggestionsModal } from "./suggestions-modal"
 
 const MOOD_EMOJIS = [
   { emoji: "😢", label: "Struggling", value: 1 },
@@ -17,7 +18,6 @@ const MOOD_EMOJIS = [
   { emoji: "😐", label: "Okay", value: 3 },
   { emoji: "😊", label: "Good", value: 4 },
   { emoji: "😄", label: "Great", value: 5 },
-  { emoji: "🤩", label: "Amazing", value: 6 },
 ]
 
 type EnhancedCheckInProps = {}
@@ -31,6 +31,8 @@ export function EnhancedCheckIn() {
   const [nextCheckIn, setNextCheckIn] = useState<string>("")
   const [userStreak, setUserStreak] = useState<UserStreak | null>(null)
   const { toast } = useToast()
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [lastCheckInResult, setLastCheckInResult] = useState<any>(null)
 
   useEffect(() => {
     // Get current user and set up auth listener
@@ -102,7 +104,18 @@ export function EnhancedCheckIn() {
       })
 
       if (result.success && result.data) {
-        const { streakDays, totalPoints, multiplier, canCheckInAgain } = result.data
+        const { streakDays, totalPoints, multiplier, canCheckInAgain, suggestions, emojiRating } = result.data
+
+        // Store result for suggestions modal
+        setLastCheckInResult({
+          suggestions,
+          emojiRating,
+          totalPoints,
+          streakDays,
+        })
+
+        // Show suggestions modal
+        setShowSuggestions(true)
 
         toast({
           title: "Check-in complete! 🎉",
@@ -326,6 +339,18 @@ export function EnhancedCheckIn() {
           )}
         </CardContent>
       </Card>
+
+      {/* Suggestions Modal */}
+      {showSuggestions && lastCheckInResult && (
+        <SuggestionsModal
+          isOpen={showSuggestions}
+          onClose={() => setShowSuggestions(false)}
+          suggestions={lastCheckInResult.suggestions}
+          emojiRating={lastCheckInResult.emojiRating}
+          totalPoints={lastCheckInResult.totalPoints}
+          streakDays={lastCheckInResult.streakDays}
+        />
+      )}
     </div>
   )
 }
