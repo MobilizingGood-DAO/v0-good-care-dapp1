@@ -36,7 +36,7 @@ export interface NFTContract {
   symbol: string
 }
 
-// Mock provider function
+// Mock provider function - no ethers dependency
 export function getProvider() {
   return {
     getBalance: async (address: string) => "0",

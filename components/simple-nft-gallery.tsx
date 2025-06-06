@@ -1,118 +1,75 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { useWallet } from "@/providers/wallet-provider"
-
-interface NFTData {
-  tokenId: string
-  name: string
-  description: string
-  image: string
-  attributes: Array<{
-    trait_type: string
-    value: string | number
-  }>
-}
+import { Card, CardContent } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export function SimpleNFTGallery() {
-  const { address } = useWallet()
-  const [nfts, setNfts] = useState<NFTData[]>([])
-  const [loading, setLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(true)
+  const [nfts, setNfts] = useState<any[]>([])
 
   useEffect(() => {
-    if (address) {
-      // Simulate loading NFTs
-      // In production, this would fetch from the blockchain or an indexer
-      setTimeout(() => {
-        const mockNFTs: NFTData[] = [
-          {
-            tokenId: "1",
-            name: "Daily Reflection – 2024-01-15",
-            description: "A daily reflection capturing mood and thoughts on the GOOD CARE journey.",
-            image: "/placeholder.svg?height=200&width=200&text=😊",
-            attributes: [
-              { trait_type: "Mood", value: "Very Happy" },
-              { trait_type: "Mood Score", value: 5 },
-              { trait_type: "Streak", value: 7 },
-              { trait_type: "Date", value: "2024-01-15" },
-            ],
-          },
-          {
-            tokenId: "2",
-            name: "Daily Reflection – 2024-01-14",
-            description: "A daily reflection capturing mood and thoughts on the GOOD CARE journey.",
-            image: "/placeholder.svg?height=200&width=200&text=🙂",
-            attributes: [
-              { trait_type: "Mood", value: "Somewhat Happy" },
-              { trait_type: "Mood Score", value: 4 },
-              { trait_type: "Streak", value: 6 },
-              { trait_type: "Date", value: "2024-01-14" },
-            ],
-          },
-        ]
-        setNfts(mockNFTs)
-        setLoading(false)
-      }, 1000)
-    }
-  }, [address])
+    // Simulate loading NFTs from local storage
+    const timer = setTimeout(() => {
+      setIsLoading(false)
 
-  if (!address) {
+      // Generate mock NFT data
+      const mockNfts = [
+        {
+          id: "1",
+          title: "Daily Reflection - 2024-05-01",
+          description: "Feeling grateful today",
+          image: "/placeholder.svg?height=300&width=300&text=Reflection",
+        },
+        {
+          id: "2",
+          title: "Daily Reflection - 2024-05-02",
+          description: "Finding balance",
+          image: "/placeholder.svg?height=300&width=300&text=Reflection",
+        },
+        {
+          id: "3",
+          title: "Community Badge",
+          description: "For helping others",
+          image: "/placeholder.svg?height=300&width=300&text=Badge",
+        },
+      ]
+
+      setNfts(mockNfts)
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [])
+
+  if (isLoading) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <p className="text-center text-muted-foreground">Connect your wallet to view your Reflection NFTs</p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="p-6">
-          <p className="text-center text-muted-foreground">Loading your Reflection NFTs...</p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (nfts.length === 0) {
-    return (
-      <Card>
-        <CardContent className="p-6">
-          <p className="text-center text-muted-foreground">
-            No Reflection NFTs found. Start your daily check-in journey to mint your first reflection!
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold">Your Reflection NFTs</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {nfts.map((nft) => (
-          <Card key={nft.tokenId} className="overflow-hidden">
-            <CardHeader className="p-0">
-              <img src={nft.image || "/placeholder.svg"} alt={nft.name} className="w-full h-48 object-cover" />
-            </CardHeader>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {[...Array(6)].map((_, i) => (
+          <Card key={i} className="overflow-hidden">
+            <Skeleton className="h-48 w-full" />
             <CardContent className="p-4">
-              <CardTitle className="text-lg mb-2">{nft.name}</CardTitle>
-              <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{nft.description}</p>
-              <div className="flex flex-wrap gap-1">
-                {nft.attributes.slice(0, 3).map((attr, index) => (
-                  <Badge key={index} variant="secondary" className="text-xs">
-                    {attr.trait_type}: {attr.value}
-                  </Badge>
-                ))}
-              </div>
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-3 w-1/2" />
             </CardContent>
           </Card>
         ))}
       </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {nfts.map((nft) => (
+        <Card key={nft.id} className="overflow-hidden">
+          <div className="aspect-square relative">
+            <img src={nft.image || "/placeholder.svg"} alt={nft.title} className="object-cover w-full h-full" />
+          </div>
+          <CardContent className="p-4">
+            <h3 className="font-medium text-lg">{nft.title}</h3>
+            <p className="text-muted-foreground text-sm">{nft.description}</p>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   )
 }
