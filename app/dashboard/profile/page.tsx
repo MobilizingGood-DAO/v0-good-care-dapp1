@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ProfileSettings } from "@/components/profile-settings"
 import { OnChainMetrics } from "@/components/profile/on-chain-metrics"
 import { BadgeCollection } from "@/components/profile/badge-collection"
+import { MyCareSection } from "@/components/profile/my-care-section"
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState("overview")
@@ -19,6 +20,7 @@ export default function ProfilePage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="care">My CARE</TabsTrigger>
           <TabsTrigger value="badges">Badges</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
@@ -32,6 +34,9 @@ export default function ProfilePage() {
               <OnChainMetrics />
             </CardContent>
           </Card>
+        </TabsContent>
+        <TabsContent value="care" className="space-y-4">
+          <MyCareSection />
         </TabsContent>
         <TabsContent value="badges" className="space-y-4">
           <BadgeCollection />

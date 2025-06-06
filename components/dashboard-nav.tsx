@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Home, Wallet, Gift, Send } from 'lucide-react'
+import { Home, Wallet, Gift, Send } from "lucide-react"
 
 export function DashboardNav() {
   const pathname = usePathname()
@@ -29,6 +29,11 @@ export function DashboardNav() {
       title: "Send",
       href: "/dashboard/send",
       icon: Send,
+    },
+    {
+      title: "My CARE",
+      href: "/dashboard/profile",
+      icon: Home, // You might want to change this to Heart or User
     },
   ]
 

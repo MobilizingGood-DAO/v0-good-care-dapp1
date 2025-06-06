@@ -20,7 +20,7 @@ const MOOD_EMOJIS = [
   { emoji: "😄", label: "Great", value: 5 },
 ]
 
-// Preview suggestions for each mood level
+// Preview suggestions for each mood level - these show immediately when emoji is selected
 const PREVIEW_SUGGESTIONS: Record<number, string[]> = {
   1: [
     "💛 Take 5 deep breaths to center yourself",
@@ -48,8 +48,6 @@ const PREVIEW_SUGGESTIONS: Record<number, string[]> = {
     "💜 Document what made today great",
   ],
 }
-
-type EnhancedCheckInProps = {}
 
 export function EnhancedCheckIn() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
@@ -105,12 +103,12 @@ export function EnhancedCheckIn() {
   }
 
   const handleMoodSelect = (emoji: string, value: number) => {
+    console.log(`🎯 Mood selected: ${emoji} (value: ${value})`)
     setSelectedMood(emoji)
     setSelectedMoodValue(value)
 
-    // Log to verify the mood selection is working
-    console.log(`Selected mood: ${emoji}, value: ${value}`)
-    console.log(`Preview suggestions:`, PREVIEW_SUGGESTIONS[value])
+    // Log the suggestions that should appear
+    console.log(`📝 Suggestions for mood ${value}:`, PREVIEW_SUGGESTIONS[value])
   }
 
   const handleCheckIn = async () => {
@@ -329,48 +327,60 @@ export function EnhancedCheckIn() {
           ) : (
             <>
               {/* Mood Selection */}
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <h3 className="font-medium">How are you feeling today?</h3>
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-5 gap-3">
                   {MOOD_EMOJIS.map((mood) => (
                     <button
                       key={mood.emoji}
                       onClick={() => handleMoodSelect(mood.emoji, mood.value)}
-                      className={`p-3 rounded-lg border-2 transition-all ${
+                      className={`p-4 rounded-lg border-2 transition-all hover:scale-105 ${
                         selectedMood === mood.emoji
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300"
+                          ? "border-blue-500 bg-blue-50 shadow-md"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
                       }`}
                       aria-label={`Select mood: ${mood.label}`}
                     >
-                      <div className="text-2xl mb-1">{mood.emoji}</div>
-                      <div className="text-xs font-medium">{mood.label}</div>
+                      <div className="text-3xl mb-2">{mood.emoji}</div>
+                      <div className="text-xs font-medium text-gray-700">{mood.label}</div>
                     </button>
                   ))}
                 </div>
+
+                {/* Points Badge */}
                 {selectedMood && (
-                  <Badge variant="secondary" className="text-xs">
-                    +10 CARE Points for mood check-in!
-                    {userStreak && userStreak.currentMultiplier > 1 && ` (${userStreak.currentMultiplier}x multiplier)`}
-                  </Badge>
+                  <div className="flex justify-center">
+                    <Badge variant="secondary" className="text-xs">
+                      +10 CARE Points for mood check-in!
+                      {userStreak &&
+                        userStreak.currentMultiplier > 1 &&
+                        ` (${userStreak.currentMultiplier}x multiplier)`}
+                    </Badge>
+                  </div>
                 )}
               </div>
 
-              {/* Suggestion Preview */}
-              {selectedMoodValue && (
+              {/* Suggestion Preview - This should appear when any emoji is selected */}
+              {selectedMoodValue !== null && PREVIEW_SUGGESTIONS[selectedMoodValue] && (
                 <div
-                  className={`p-4 rounded-lg border space-y-3 ${getMoodSuggestionPreviewColor(selectedMoodValue)}`}
+                  className={`p-4 rounded-lg border-2 space-y-3 transition-all duration-300 ${getMoodSuggestionPreviewColor(selectedMoodValue)}`}
                   data-testid={`mood-preview-${selectedMoodValue}`}
                 >
                   <div className="flex items-center gap-2">
-                    <Lightbulb className="h-4 w-4" />
-                    <h4 className="font-medium text-sm">{getMoodSuggestionTitle(selectedMoodValue)}</h4>
+                    <Lightbulb className="h-5 w-5" />
+                    <h4 className="font-semibold text-sm">{getMoodSuggestionTitle(selectedMoodValue)}</h4>
                   </div>
-                  <ul className="space-y-2 text-sm pl-5 list-disc">
+                  <ul className="space-y-2 text-sm">
                     {PREVIEW_SUGGESTIONS[selectedMoodValue].map((suggestion, i) => (
-                      <li key={i}>{suggestion}</li>
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-xs mt-1">•</span>
+                        <span>{suggestion}</span>
+                      </li>
                     ))}
                   </ul>
+                  <div className="text-xs opacity-75 italic">
+                    Complete your check-in to get personalized suggestions!
+                  </div>
                 </div>
               )}
 
