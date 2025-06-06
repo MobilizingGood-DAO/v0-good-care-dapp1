@@ -98,6 +98,20 @@ export class EnhancedCheckInService {
       // Get emoji rating and suggestions
       const emojiRating = this.getEmojiRating(data.emoji)
       const suggestions = EmojiSuggestionsService.getSuggestionsForRating(emojiRating, 2)
+
+      // Ensure we have valid suggestions
+      if (!suggestions || suggestions.length === 0) {
+        console.error("No suggestions generated for rating:", emojiRating)
+        // Fallback to default suggestions if none were generated
+        suggestions.push({
+          id: `fallback-${emojiRating}-1`,
+          rating: emojiRating as any,
+          text: "Take a moment to breathe deeply and center yourself.",
+          category: "wellness",
+          icon: "🧘",
+        })
+      }
+
       const selectedSuggestion = suggestions[0]?.text || null
 
       // Calculate base points (emoji + prompt)

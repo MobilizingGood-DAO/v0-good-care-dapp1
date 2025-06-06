@@ -97,38 +97,44 @@ export function SuggestionsModal({
               Personalized Suggestions
             </h3>
 
-            {suggestions.map((suggestion, index) => (
-              <Card key={suggestion.id} className="transition-all hover:shadow-md">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="text-2xl">{suggestion.icon}</div>
-                    <div className="flex-1">
-                      <p className="text-sm leading-relaxed">{suggestion.text}</p>
-                      <div className="flex items-center justify-between mt-3">
-                        <Badge variant="outline" className="text-xs">
-                          {suggestion.category}
-                        </Badge>
-                        {completedSuggestions.has(suggestion.id) ? (
-                          <Badge variant="default" className="text-xs bg-green-100 text-green-800">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Completed!
+            {suggestions && suggestions.length > 0 ? (
+              suggestions.map((suggestion, index) => (
+                <Card key={suggestion.id || index} className="transition-all hover:shadow-md">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl">{suggestion.icon}</div>
+                      <div className="flex-1">
+                        <p className="text-sm leading-relaxed">{suggestion.text}</p>
+                        <div className="flex items-center justify-between mt-3">
+                          <Badge variant="outline" className="text-xs">
+                            {suggestion.category}
                           </Badge>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleMarkComplete(suggestion.id)}
-                            className="text-xs"
-                          >
-                            Mark as Done
-                          </Button>
-                        )}
+                          {completedSuggestions.has(suggestion.id) ? (
+                            <Badge variant="default" className="text-xs bg-green-100 text-green-800">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Completed!
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleMarkComplete(suggestion.id)}
+                              className="text-xs"
+                            >
+                              Mark as Done
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <div className="text-center p-6 border rounded-lg">
+                <p className="text-muted-foreground">No suggestions available. Please try again later.</p>
+              </div>
+            )}
           </div>
 
           {/* Encouragement */}

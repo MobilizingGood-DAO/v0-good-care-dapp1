@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Flame, Star, Clock, Gift } from "lucide-react"
+import { Flame, Star, Clock, Gift, Lightbulb } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { EnhancedCheckInService, type UserStreak } from "@/lib/enhanced-checkin-service"
 import { SupabaseAuthService, type AuthUser } from "@/lib/supabase-auth-service"
@@ -20,11 +20,37 @@ const MOOD_EMOJIS = [
   { emoji: "😄", label: "Great", value: 5 },
 ]
 
+// Preview suggestions for each mood level
+const PREVIEW_SUGGESTIONS: Record<number, string[]> = {
+  1: [
+    "Take 5 deep breaths to center yourself",
+    "Be extra gentle with yourself today",
+    "Consider reaching out to someone you trust",
+  ],
+  2: [
+    "Try gentle stretching to release tension",
+    "Name one small thing that went well today",
+    "Listen to a song that lifts your spirits",
+  ],
+  3: [
+    "Take a short walk to shift your energy",
+    "Celebrate one small accomplishment today",
+    "Drink a glass of water mindfully",
+  ],
+  4: [
+    "Share your positive energy with someone",
+    "Take a moment to appreciate your progress",
+    "Channel this energy into something creative",
+  ],
+  5: ["Reflect on what's helping you thrive", "Pay it forward with a kind gesture", "Document what made today great"],
+}
+
 type EnhancedCheckInProps = {}
 
 export function EnhancedCheckIn() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [selectedMood, setSelectedMood] = useState<string>("")
+  const [selectedMoodValue, setSelectedMoodValue] = useState<number | null>(null)
   const [reflection, setReflection] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [canCheckIn, setCanCheckIn] = useState(true)
@@ -72,6 +98,11 @@ export function EnhancedCheckIn() {
     } catch (error) {
       console.error("Error loading user data:", error)
     }
+  }
+
+  const handleMoodSelect = (emoji: string, value: number) => {
+    setSelectedMood(emoji)
+    setSelectedMoodValue(value)
   }
 
   const handleCheckIn = async () => {
@@ -124,6 +155,7 @@ export function EnhancedCheckIn() {
 
         // Reset form
         setSelectedMood("")
+        setSelectedMoodValue(null)
         setReflection("")
         setCanCheckIn(false)
         setNextCheckIn(canCheckInAgain)
@@ -187,6 +219,23 @@ export function EnhancedCheckIn() {
       return `${hours}h ${minutes}m`
     }
     return `${minutes}m`
+  }
+
+  const getMoodSuggestionPreviewColor = (value: number) => {
+    switch (value) {
+      case 1:
+        return "bg-red-50 border-red-200 text-red-700"
+      case 2:
+        return "bg-orange-50 border-orange-200 text-orange-700"
+      case 3:
+        return "bg-yellow-50 border-yellow-200 text-yellow-700"
+      case 4:
+        return "bg-green-50 border-green-200 text-green-700"
+      case 5:
+        return "bg-purple-50 border-purple-200 text-purple-700"
+      default:
+        return "bg-gray-50 border-gray-200 text-gray-700"
+    }
   }
 
   return (
@@ -261,7 +310,7 @@ export function EnhancedCheckIn() {
                   {MOOD_EMOJIS.map((mood) => (
                     <button
                       key={mood.emoji}
-                      onClick={() => setSelectedMood(mood.emoji)}
+                      onClick={() => handleMoodSelect(mood.emoji, mood.value)}
                       className={`p-3 rounded-lg border-2 transition-all ${
                         selectedMood === mood.emoji
                           ? "border-blue-500 bg-blue-50"
@@ -280,6 +329,21 @@ export function EnhancedCheckIn() {
                   </Badge>
                 )}
               </div>
+
+              {/* Suggestion Preview */}
+              {selectedMoodValue && (
+                <div className={`p-4 rounded-lg border space-y-3 ${getMoodSuggestionPreviewColor(selectedMoodValue)}`}>
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="h-4 w-4" />
+                    <h4 className="font-medium text-sm">Suggestions you might receive:</h4>
+                  </div>
+                  <ul className="space-y-1 text-sm pl-5 list-disc">
+                    {PREVIEW_SUGGESTIONS[selectedMoodValue].map((suggestion, i) => (
+                      <li key={i}>{suggestion}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Reflection Prompt */}
               <div className="space-y-3">
