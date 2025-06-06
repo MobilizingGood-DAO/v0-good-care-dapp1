@@ -23,26 +23,30 @@ const MOOD_EMOJIS = [
 // Preview suggestions for each mood level
 const PREVIEW_SUGGESTIONS: Record<number, string[]> = {
   1: [
-    "Take 5 deep breaths to center yourself",
-    "Be extra gentle with yourself today",
-    "Consider reaching out to someone you trust",
+    "💛 Take 5 deep breaths to center yourself",
+    "💛 Be extra gentle with yourself today",
+    "💛 Consider reaching out to someone you trust",
   ],
   2: [
-    "Try gentle stretching to release tension",
-    "Name one small thing that went well today",
-    "Listen to a song that lifts your spirits",
+    "🧡 Try gentle stretching to release tension",
+    "🧡 Name one small thing that went well today",
+    "🧡 Listen to a song that lifts your spirits",
   ],
   3: [
-    "Take a short walk to shift your energy",
-    "Celebrate one small accomplishment today",
-    "Drink a glass of water mindfully",
+    "💚 Take a short walk to shift your energy",
+    "💚 Celebrate one small accomplishment today",
+    "💚 Drink a glass of water mindfully",
   ],
   4: [
-    "Share your positive energy with someone",
-    "Take a moment to appreciate your progress",
-    "Channel this energy into something creative",
+    "💙 Share your positive energy with someone",
+    "💙 Take a moment to appreciate your progress",
+    "💙 Channel this energy into something creative",
   ],
-  5: ["Reflect on what's helping you thrive", "Pay it forward with a kind gesture", "Document what made today great"],
+  5: [
+    "💜 Reflect on what's helping you thrive",
+    "💜 Pay it forward with a kind gesture",
+    "💜 Document what made today great",
+  ],
 }
 
 type EnhancedCheckInProps = {}
@@ -103,6 +107,10 @@ export function EnhancedCheckIn() {
   const handleMoodSelect = (emoji: string, value: number) => {
     setSelectedMood(emoji)
     setSelectedMoodValue(value)
+
+    // Log to verify the mood selection is working
+    console.log(`Selected mood: ${emoji}, value: ${value}`)
+    console.log(`Preview suggestions:`, PREVIEW_SUGGESTIONS[value])
   }
 
   const handleCheckIn = async () => {
@@ -238,6 +246,23 @@ export function EnhancedCheckIn() {
     }
   }
 
+  const getMoodSuggestionTitle = (value: number) => {
+    switch (value) {
+      case 1:
+        return "When struggling, try these:"
+      case 2:
+        return "During difficult times, consider:"
+      case 3:
+        return "To improve your day:"
+      case 4:
+        return "To maintain this good energy:"
+      case 5:
+        return "To make the most of this great mood:"
+      default:
+        return "Suggestions for you:"
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Streak Display */}
@@ -306,7 +331,7 @@ export function EnhancedCheckIn() {
               {/* Mood Selection */}
               <div className="space-y-3">
                 <h3 className="font-medium">How are you feeling today?</h3>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-5 gap-2">
                   {MOOD_EMOJIS.map((mood) => (
                     <button
                       key={mood.emoji}
@@ -316,6 +341,7 @@ export function EnhancedCheckIn() {
                           ? "border-blue-500 bg-blue-50"
                           : "border-gray-200 hover:border-gray-300"
                       }`}
+                      aria-label={`Select mood: ${mood.label}`}
                     >
                       <div className="text-2xl mb-1">{mood.emoji}</div>
                       <div className="text-xs font-medium">{mood.label}</div>
@@ -332,12 +358,15 @@ export function EnhancedCheckIn() {
 
               {/* Suggestion Preview */}
               {selectedMoodValue && (
-                <div className={`p-4 rounded-lg border space-y-3 ${getMoodSuggestionPreviewColor(selectedMoodValue)}`}>
+                <div
+                  className={`p-4 rounded-lg border space-y-3 ${getMoodSuggestionPreviewColor(selectedMoodValue)}`}
+                  data-testid={`mood-preview-${selectedMoodValue}`}
+                >
                   <div className="flex items-center gap-2">
                     <Lightbulb className="h-4 w-4" />
-                    <h4 className="font-medium text-sm">Suggestions you might receive:</h4>
+                    <h4 className="font-medium text-sm">{getMoodSuggestionTitle(selectedMoodValue)}</h4>
                   </div>
-                  <ul className="space-y-1 text-sm pl-5 list-disc">
+                  <ul className="space-y-2 text-sm pl-5 list-disc">
                     {PREVIEW_SUGGESTIONS[selectedMoodValue].map((suggestion, i) => (
                       <li key={i}>{suggestion}</li>
                     ))}

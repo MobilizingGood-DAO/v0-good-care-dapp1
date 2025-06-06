@@ -1,11 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Sparkles, Heart, CheckCircle } from "lucide-react"
+import { CheckCircle, Lightbulb } from "lucide-react"
 import type { EmojiSuggestion } from "@/lib/emoji-suggestions-service"
 
 interface SuggestionsModalProps {
@@ -25,130 +23,174 @@ export function SuggestionsModal({
   totalPoints,
   streakDays,
 }: SuggestionsModalProps) {
-  const [completedSuggestions, setCompletedSuggestions] = useState<Set<string>>(new Set())
+  const [completedSuggestions, setCompletedSuggestions] = useState<Record<string, boolean>>({})
 
-  const handleMarkComplete = (suggestionId: string) => {
-    setCompletedSuggestions((prev) => new Set([...prev, suggestionId]))
+  const toggleSuggestionCompletion = (id: string) => {
+    setCompletedSuggestions((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }))
   }
 
-  const getRatingMessage = (rating: number) => {
+  const getEmojiForRating = (rating: number): string => {
     switch (rating) {
       case 1:
-        return "It's okay to have tough days. Here are some gentle suggestions to help you through:"
+        return "😢"
       case 2:
-        return "Things feel a bit challenging today. These might help lift your spirits:"
+        return "😕"
       case 3:
-        return "You're doing okay! Here are some ways to boost your day:"
+        return "😐"
       case 4:
-        return "You're feeling good! Let's keep that positive energy flowing:"
+        return "😊"
       case 5:
-        return "You're having an amazing day! Here's how to make it even better:"
+        return "😄"
       default:
-        return "Here are some personalized suggestions for you:"
+        return "😐"
     }
   }
 
-  const getRatingColor = (rating: number) => {
+  const getColorForRating = (rating: number): string => {
     switch (rating) {
       case 1:
-        return "text-red-600 bg-red-50 border-red-200"
+        return "text-red-600"
       case 2:
-        return "text-orange-600 bg-orange-50 border-orange-200"
+        return "text-orange-600"
       case 3:
-        return "text-yellow-600 bg-yellow-50 border-yellow-200"
+        return "text-yellow-600"
       case 4:
-        return "text-green-600 bg-green-50 border-green-200"
+        return "text-green-600"
       case 5:
-        return "text-purple-600 bg-purple-50 border-purple-200"
+        return "text-purple-600"
       default:
-        return "text-gray-600 bg-gray-50 border-gray-200"
+        return "text-blue-600"
+    }
+  }
+
+  const getBackgroundForRating = (rating: number): string => {
+    switch (rating) {
+      case 1:
+        return "bg-red-50"
+      case 2:
+        return "bg-orange-50"
+      case 3:
+        return "bg-yellow-50"
+      case 4:
+        return "bg-green-50"
+      case 5:
+        return "bg-purple-50"
+      default:
+        return "bg-blue-50"
+    }
+  }
+
+  const getBorderForRating = (rating: number): string => {
+    switch (rating) {
+      case 1:
+        return "border-red-200"
+      case 2:
+        return "border-orange-200"
+      case 3:
+        return "border-yellow-200"
+      case 4:
+        return "border-green-200"
+      case 5:
+        return "border-purple-200"
+      default:
+        return "border-blue-200"
+    }
+  }
+
+  const getMessageForRating = (rating: number): string => {
+    switch (rating) {
+      case 1:
+        return "Be gentle with yourself today. Here are some suggestions that might help:"
+      case 2:
+        return "Tough days happen. Consider these ideas to help shift your energy:"
+      case 3:
+        return "Here are some ways to boost your day:"
+      case 4:
+        return "Great job! Here are some ways to maintain this positive energy:"
+      case 5:
+        return "You're doing amazing! Here are some ways to make the most of this great mood:"
+      default:
+        return "Here are some suggestions based on your check-in:"
     }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Sparkles className="h-6 w-6 text-yellow-500" />
-            Check-in Complete! 🎉
+          <DialogTitle className="flex items-center gap-2">
+            <span className="text-xl">{getEmojiForRating(emojiRating)}</span>
+            <span>Check-in Complete!</span>
           </DialogTitle>
-          <DialogDescription>
-            You earned <strong>{totalPoints} CARE Points</strong>
-            {streakDays > 1 && (
-              <span>
-                {" "}
-                and maintained your <strong>{streakDays}-day streak</strong>!
-              </span>
-            )}
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Rating Message */}
-          <div className={`p-4 rounded-lg border ${getRatingColor(emojiRating)}`}>
-            <p className="font-medium">{getRatingMessage(emojiRating)}</p>
+        <div className="space-y-4">
+          {/* Points Summary */}
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+            <div className="font-medium text-green-800">You earned {totalPoints} CARE Points!</div>
+            {streakDays > 1 && <div className="text-sm text-green-700">{streakDays} day streak! 🔥</div>}
           </div>
 
           {/* Suggestions */}
-          <div className="space-y-4">
-            <h3 className="font-semibold flex items-center gap-2">
-              <Heart className="h-5 w-5 text-pink-500" />
-              Personalized Suggestions
-            </h3>
+          <div
+            className={`p-4 rounded-lg border space-y-3 ${getBackgroundForRating(
+              emojiRating,
+            )} ${getBorderForRating(emojiRating)}`}
+          >
+            <div className="flex items-center gap-2">
+              <Lightbulb className={`h-4 w-4 ${getColorForRating(emojiRating)}`} />
+              <h4 className={`font-medium text-sm ${getColorForRating(emojiRating)}`}>
+                {getMessageForRating(emojiRating)}
+              </h4>
+            </div>
 
-            {suggestions && suggestions.length > 0 ? (
-              suggestions.map((suggestion, index) => (
-                <Card key={suggestion.id || index} className="transition-all hover:shadow-md">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl">{suggestion.icon}</div>
-                      <div className="flex-1">
-                        <p className="text-sm leading-relaxed">{suggestion.text}</p>
-                        <div className="flex items-center justify-between mt-3">
-                          <Badge variant="outline" className="text-xs">
-                            {suggestion.category}
-                          </Badge>
-                          {completedSuggestions.has(suggestion.id) ? (
-                            <Badge variant="default" className="text-xs bg-green-100 text-green-800">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Completed!
-                            </Badge>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleMarkComplete(suggestion.id)}
-                              className="text-xs"
-                            >
-                              Mark as Done
-                            </Button>
-                          )}
-                        </div>
-                      </div>
+            <div className="space-y-3">
+              {suggestions.map((suggestion) => (
+                <div
+                  key={suggestion.id}
+                  className={`flex items-start gap-3 p-3 rounded-md border ${
+                    completedSuggestions[suggestion.id]
+                      ? "bg-gray-50 border-gray-200 text-gray-500"
+                      : "bg-white border-gray-100"
+                  }`}
+                >
+                  <div className="text-xl flex-shrink-0">{suggestion.icon}</div>
+                  <div className="flex-grow">
+                    <p className={`text-sm ${completedSuggestions[suggestion.id] ? "line-through text-gray-400" : ""}`}>
+                      {suggestion.text}
+                    </p>
+                    <div className="mt-2">
+                      <Button
+                        variant={completedSuggestions[suggestion.id] ? "outline" : "secondary"}
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => toggleSuggestionCompletion(suggestion.id)}
+                      >
+                        {completedSuggestions[suggestion.id] ? (
+                          <span className="flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" />
+                            Completed
+                          </span>
+                        ) : (
+                          "Mark as done"
+                        )}
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <div className="text-center p-6 border rounded-lg">
-                <p className="text-muted-foreground">No suggestions available. Please try again later.</p>
-              </div>
-            )}
-          </div>
-
-          {/* Encouragement */}
-          <div className="text-center p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border">
-            <p className="text-sm text-gray-600">Remember: Small actions create big changes. You're doing great! 💙</p>
-          </div>
-
-          {/* Close Button */}
-          <div className="flex justify-center">
-            <Button onClick={onClose} className="w-full max-w-xs">
-              Continue Your Journey
-            </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
+
+        <DialogFooter>
+          <Button onClick={onClose} className="w-full">
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
