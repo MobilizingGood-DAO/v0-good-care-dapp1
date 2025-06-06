@@ -11,16 +11,64 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useToast } from "@/hooks/use-toast"
+import { AuthService } from "@/lib/auth-service"
+import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 
 export function UserNav() {
-  const user = { username: "Demo User", email: "demo@example.com" }
+  const { toast } = useToast()
+  const router = useRouter()
+  const [user, setUser] = useState<{ username: string; email?: string; avatar?: string } | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const loadUser = async () => {
+      const result = await AuthService.getCurrentUser()
+      if (result.success && result.user) {
+        setUser({
+          username: result.user.username,
+          email: result.user.email,
+          avatar: result.user.avatar,
+        })
+      }
+      setIsLoading(false)
+    }
+
+    loadUser()
+  }, [])
+
+  const handleSignOut = async () => {
+    const result = await AuthService.signOut()
+    if (result.success) {
+      toast({
+        title: "Signed out",
+        description: "You have been signed out successfully",
+      })
+      router.push("/login")
+    } else {
+      toast({
+        title: "Sign out failed",
+        description: result.error || "Failed to sign out",
+        variant: "destructive",
+      })
+    }
+  }
+
+  if (isLoading || !user) {
+    return (
+      <Button variant="ghost" size="sm" className="relative h-8 w-8 rounded-full">
+        ...
+      </Button>
+    )
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <Avatar className="h-8 w-8">
-            <AvatarImage src="/placeholder.svg" alt={user.username} />
+            <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.username} />
             <AvatarFallback>{user.username.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
         </Button>
@@ -34,11 +82,11 @@ export function UserNav() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem>Profile</DropdownMenuItem>
-          <DropdownMenuItem>Settings</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/dashboard/profile")}>Profile</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>Settings</DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>Log out</DropdownMenuItem>
+        <DropdownMenuItem onClick={handleSignOut}>Log out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

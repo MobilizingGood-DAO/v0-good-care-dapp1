@@ -74,17 +74,11 @@ export class RealSupabaseService {
         email: authUser.email,
         wallet_address: walletAddress,
         username:
-          authUser.user_metadata?.user_name || // Twitter username
-          authUser.user_metadata?.preferred_username || // Other providers
           authUser.user_metadata?.full_name?.replace(/\s+/g, "_").toLowerCase() ||
           authUser.email?.split("@")[0] ||
           `user_${authUser.id.slice(-6)}`,
-        avatar:
-          authUser.user_metadata?.avatar_url || // Twitter avatar
-          authUser.user_metadata?.picture || // Other providers
-          null,
+        avatar: authUser.user_metadata?.avatar_url || null,
         social_provider: authUser.app_metadata?.provider || "email",
-        bio: authUser.user_metadata?.description || null, // Twitter bio
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
@@ -157,7 +151,7 @@ export class RealSupabaseService {
       const today = new Date().toISOString().split("T")[0]
 
       const { data, error } = await supabase
-        .from("daily_checkins")
+        .from("checkins")
         .select("id")
         .eq("user_id", userId)
         .eq("date", today)
@@ -214,7 +208,7 @@ export class RealSupabaseService {
 
       // Insert check-in
       const { data: checkIn, error: checkInError } = await supabase
-        .from("daily_checkins")
+        .from("checkins")
         .insert({
           user_id: userId,
           date: today,
@@ -271,7 +265,7 @@ export class RealSupabaseService {
   static async getUserCheckIns(userId: string, limit = 30): Promise<CheckIn[]> {
     try {
       const { data, error } = await supabase
-        .from("daily_checkins")
+        .from("checkins")
         .select("*")
         .eq("user_id", userId)
         .order("date", { ascending: false })
