@@ -1,14 +1,6 @@
+// components/shell.tsx
 import type React from "react"
-import { cn } from "@/lib/utils"
 
-interface ShellProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode
-}
-
-export const Shell = ({ children, className, ...props }: ShellProps) => {
-  return (
-    <div className={cn("shell-container container mx-auto px-4 py-6", className)} {...props}>
-      {children}
-    </div>
-  )
+export const Shell = ({ children }: { children: React.ReactNode }) => {
+  return <div className="shell-container p-4">{children}</div>
 }
