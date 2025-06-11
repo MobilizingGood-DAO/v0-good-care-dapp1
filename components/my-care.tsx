@@ -5,7 +5,7 @@ import { careSuggestions, type MoodType } from "../utils/suggestions"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Heart, RefreshCw, TrendingUp } from "lucide-react"
+import { Heart, RefreshCw, TrendingUp, CheckCircle } from "lucide-react"
 import { SupabaseAuthService } from "@/lib/supabase-auth-service"
 
 interface MyCareProps {
@@ -18,6 +18,7 @@ const MyCare = ({ userId }: MyCareProps) => {
   const [isLoading, setIsLoading] = useState(true)
   const [lastCheckIn, setLastCheckIn] = useState<string | null>(null)
   const [checkedSuggestions, setCheckedSuggestions] = useState<Set<number>>(new Set())
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchMood()
@@ -25,13 +26,17 @@ const MyCare = ({ userId }: MyCareProps) => {
 
   async function fetchMood() {
     setIsLoading(true)
+    setError(null)
+
     try {
       // Get current user if userId not provided
       let currentUserId = userId
       if (!currentUserId) {
         const user = await SupabaseAuthService.getCurrentUser()
         if (!user) {
-          console.error("No user found")
+          // Fallback to demo mode
+          setUserMood("feelingGood")
+          setSuggestions(careSuggestions.feelingGood)
           setIsLoading(false)
           return
         }
@@ -48,8 +53,10 @@ const MyCare = ({ userId }: MyCareProps) => {
         .single()
 
       if (error && error.code !== "PGRST116") {
-        // PGRST116 = no rows returned
         console.error("Error fetching mood:", error)
+        // Fallback to default suggestions
+        setUserMood("feelingGood")
+        setSuggestions(careSuggestions.feelingGood)
         setIsLoading(false)
         return
       }
@@ -58,7 +65,7 @@ const MyCare = ({ userId }: MyCareProps) => {
       let mood: MoodType = "feelingGood"
       if (data?.emoji) {
         // Map emojis to mood - struggling/difficult = down, others = good
-        const downEmojis = ["😢", "😕"]
+        const downEmojis = ["😢", "😕", "😔"]
         mood = downEmojis.includes(data.emoji) ? "feelingDown" : "feelingGood"
         setLastCheckIn(data.timestamp)
       }
@@ -67,6 +74,10 @@ const MyCare = ({ userId }: MyCareProps) => {
       setSuggestions(careSuggestions[mood])
     } catch (error) {
       console.error("Error in fetchMood:", error)
+      setError("Unable to load personalized suggestions")
+      // Fallback to default
+      setUserMood("feelingGood")
+      setSuggestions(careSuggestions.feelingGood)
     }
     setIsLoading(false)
   }
@@ -87,6 +98,10 @@ const MyCare = ({ userId }: MyCareProps) => {
 
   const getMoodColor = () => {
     return userMood === "feelingDown" ? "text-yellow-600" : "text-blue-600"
+  }
+
+  const getMoodEmoji = () => {
+    return userMood === "feelingDown" ? "💛" : "💙"
   }
 
   if (isLoading) {
@@ -113,6 +128,15 @@ const MyCare = ({ userId }: MyCareProps) => {
         </Button>
       </div>
 
+      {error && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="pt-6">
+            <p className="text-yellow-800 text-sm">{error}</p>
+            <p className="text-yellow-600 text-xs mt-1">Showing default suggestions</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Mood Status */}
       <Card>
         <CardHeader>
@@ -126,13 +150,15 @@ const MyCare = ({ userId }: MyCareProps) => {
           <div className="flex items-center justify-between">
             <div>
               <div className={`text-lg font-semibold ${getMoodColor()}`}>{getMoodLabel()}</div>
-              {lastCheckIn && (
+              {lastCheckIn ? (
                 <div className="text-sm text-muted-foreground">
                   Last check-in: {new Date(lastCheckIn).toLocaleDateString()}
                 </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">Complete a check-in to get personalized suggestions</div>
               )}
             </div>
-            <div className="text-2xl">{userMood === "feelingDown" ? "💛" : "💙"}</div>
+            <div className="text-2xl">{getMoodEmoji()}</div>
           </div>
         </CardContent>
       </Card>
@@ -141,7 +167,11 @@ const MyCare = ({ userId }: MyCareProps) => {
       <Card>
         <CardHeader>
           <CardTitle>Today's CARE Suggestions</CardTitle>
-          <CardDescription>Personalized tips to support your wellness journey</CardDescription>
+          <CardDescription>
+            {userMood === "feelingDown"
+              ? "Gentle reminders to support you through tough moments"
+              : "Ways to maintain and share your positive energy"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -157,9 +187,7 @@ const MyCare = ({ userId }: MyCareProps) => {
               >
                 <div className="flex items-center justify-between">
                   <span className="text-gray-700 flex-1">{tip}</span>
-                  {checkedSuggestions.has(index) && (
-                    <span className="text-green-600 font-semibold text-sm ml-2">✓ Noted</span>
-                  )}
+                  {checkedSuggestions.has(index) && <CheckCircle className="h-5 w-5 text-green-600 ml-2" />}
                 </div>
               </div>
             ))}
