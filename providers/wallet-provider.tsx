@@ -1,117 +1,119 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
-import { fetchTokenBalances } from "@/lib/blockchain"
+import { useState, useEffect, createContext, useContext, type ReactNode } from "react"
+import { Connection, type PublicKey, clusterApiUrl } from "@solana/web3.js"
+import { Program, AnchorProvider } from "@project-serum/anchor"
+import {
+  getPhantomWallet,
+  getSolflareWallet,
+  getSolletWallet,
+  getSlopeWallet,
+  getBackpackWallet,
+  getExodusWallet,
+  getGlowWallet,
+  getTorusWallet,
+  getLedgerWallet,
+  getMathWallet,
+  getSafePalWallet,
+  getSolongWallet,
+  getTokenPocketWallet,
+} from "@solana/wallet-adapter-wallets"
+import { useWallet, WalletProvider, ConnectionProvider } from "@solana/wallet-adapter-react"
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui"
 
-interface WalletContextType {
-  address: string | null
-  balance: {
-    gct: string
-    care: string
+require("@solana/wallet-adapter-react-ui/styles.css")
+
+// Define the context
+interface WalletContextState {
+  wallet: any
+  publicKey: PublicKey | null
+  connection: Connection | null
+  program: Program | null
+  // Add any other relevant state or functions here
+}
+
+const WalletContext = createContext<WalletContextState | undefined>(undefined)
+
+// Define the provider
+interface WalletProviderProps {
+  children: ReactNode
+  network?: string
+  programId?: string
+  idl?: any
+}
+
+const WalletContextProvider: React.FC<WalletProviderProps> = ({ children, network = "devnet", programId, idl }) => {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const wallet = useWallet()
+  const endpoint = clusterApiUrl(network)
+  const connection = new Connection(endpoint, "processed")
+
+  const { publicKey } = wallet
+
+  const opts = {
+    preflightCommitment: "processed",
   }
-  isConnected: boolean
-  connect: () => Promise<void>
-  disconnect: () => void
+
+  const provider = new AnchorProvider(connection, wallet, opts.preflightCommitment)
+
+  const program = programId && idl ? new Program(idl, programId, provider) : null
+
+  if (!mounted) {
+    return <>{children}</>
+  }
+
+  return <WalletContext.Provider value={{ wallet, publicKey, connection, program }}>{children}</WalletContext.Provider>
 }
 
-const defaultContext: WalletContextType = {
-  address: null,
-  balance: {
-    gct: "0",
-    care: "0",
-  },
-  isConnected: false,
-  connect: async () => {},
-  disconnect: () => {},
-}
-
-const WalletContext = createContext<WalletContextType>(defaultContext)
-
-export const useWallet = () => {
+// Custom hook to use the context
+const useWalletContext = () => {
   const context = useContext(WalletContext)
   if (!context) {
-    throw new Error("useWallet must be used within a WalletProvider")
+    throw new Error("useWalletContext must be used within a WalletContextProvider")
   }
   return context
 }
 
-export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [address, setAddress] = useState<string | null>(null)
-  const [balance, setBalance] = useState<{ gct: string; care: string }>({
-    gct: "0",
-    care: "0",
-  })
-  const [isConnected, setIsConnected] = useState(false)
+const WalletProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Can be set to 'devnet', 'testnet', or 'mainnet-beta'
+  const network = "devnet"
 
-  // Load wallet from localStorage on mount
-  useEffect(() => {
-    if (typeof window === "undefined") return
-
-    try {
-      const savedAddress = localStorage.getItem("walletAddress")
-      if (savedAddress) {
-        setAddress(savedAddress)
-        setIsConnected(true)
-
-        // Fetch balances
-        fetchTokenBalances(savedAddress).then((balances) => {
-          setBalance({
-            gct: balances.gct.balance,
-            care: balances.care.balance,
-          })
-        })
-      }
-    } catch (error) {
-      console.error("Error loading wallet from localStorage:", error)
-    }
-  }, [])
-
-  const connect = async () => {
-    try {
-      // Generate a mock wallet address
-      const mockAddress = `0x${Array(40)
-        .fill(0)
-        .map(() => Math.floor(Math.random() * 16).toString(16))
-        .join("")}`
-
-      setAddress(mockAddress)
-      setIsConnected(true)
-
-      // Save to localStorage
-      localStorage.setItem("walletAddress", mockAddress)
-
-      // Fetch mock balances
-      const balances = await fetchTokenBalances(mockAddress)
-      setBalance({
-        gct: balances.gct.balance,
-        care: balances.care.balance,
-      })
-    } catch (error) {
-      console.error("Error connecting wallet:", error)
-    }
-  }
-
-  const disconnect = () => {
-    setAddress(null)
-    setIsConnected(false)
-    setBalance({ gct: "0", care: "0" })
-
-    // Remove from localStorage
-    localStorage.removeItem("walletAddress")
-  }
+  const wallets = [
+    /* new PhantomWalletAdapter(),
+    new GlowWalletAdapter(),
+    new SlopeWalletAdapter(),
+    new SolflareWalletAdapter({ network }),
+    new TorusWalletAdapter(),
+    new LedgerWalletAdapter(),
+    new SolletWalletAdapter({ network }), */
+    getPhantomWallet(),
+    getSolflareWallet(),
+    getSolletWallet(),
+    getSlopeWallet(),
+    getBackpackWallet(),
+    getExodusWallet(),
+    getGlowWallet(),
+    getTorusWallet(),
+    getLedgerWallet(),
+    getMathWallet(),
+    getSafePalWallet(),
+    getSolongWallet(),
+    getTokenPocketWallet(),
+  ]
 
   return (
-    <WalletContext.Provider
-      value={{
-        address,
-        balance,
-        isConnected,
-        connect,
-        disconnect,
-      }}
-    >
-      {children}
-    </WalletContext.Provider>
+    <ConnectionProvider endpoint={clusterApiUrl(network)}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>{children}</WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
   )
 }
+
+export { WalletContextProvider, useWalletContext, WalletProviderWrapper }

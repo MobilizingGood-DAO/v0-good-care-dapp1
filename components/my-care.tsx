@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Heart, RefreshCw, TrendingUp, CheckCircle } from "lucide-react"
 import { SupabaseAuthService } from "@/lib/supabase-auth-service"
+import { HydrationSafeDate } from "./hydration-safe-date"
 
 interface MyCareProps {
   userId?: string
@@ -19,10 +20,15 @@ const MyCare = ({ userId }: MyCareProps) => {
   const [lastCheckIn, setLastCheckIn] = useState<string | null>(null)
   const [checkedSuggestions, setCheckedSuggestions] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     fetchMood()
   }, [userId])
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   async function fetchMood() {
     setIsLoading(true)
@@ -104,6 +110,16 @@ const MyCare = ({ userId }: MyCareProps) => {
     return userMood === "feelingDown" ? "💛" : "💙"
   }
 
+  if (!mounted) {
+    return (
+      <div className="p-4">
+        <div className="flex items-center justify-center py-8">
+          <div className="text-muted-foreground">Loading...</div>
+        </div>
+      </div>
+    )
+  }
+
   if (isLoading) {
     return (
       <div className="p-4">
@@ -150,12 +166,10 @@ const MyCare = ({ userId }: MyCareProps) => {
           <div className="flex items-center justify-between">
             <div>
               <div className={`text-lg font-semibold ${getMoodColor()}`}>{getMoodLabel()}</div>
-              {lastCheckIn ? (
+              {lastCheckIn && (
                 <div className="text-sm text-muted-foreground">
-                  Last check-in: {new Date(lastCheckIn).toLocaleDateString()}
+                  Last check-in: <HydrationSafeDate date={lastCheckIn} />
                 </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">Complete a check-in to get personalized suggestions</div>
               )}
             </div>
             <div className="text-2xl">{getMoodEmoji()}</div>
