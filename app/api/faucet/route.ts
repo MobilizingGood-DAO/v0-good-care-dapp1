@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { Wallet, providers, utils } from "ethers"
+import { JsonRpcProvider, Wallet, parseUnits } from "ethers"
 
 // Track funded addresses to prevent abuse
 const fundedAddresses = new Set<string>()
@@ -18,14 +18,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Initialize provider and faucet wallet
-    const provider = new providers.JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
+    const provider = new JsonRpcProvider(process.env.NEXT_PUBLIC_GOODCARE_RPC)
     const faucetWallet = new Wallet(process.env.FAUCET_PRIVATE_KEY!, provider)
 
     // Check faucet balance
-    const faucetBalance = await faucetWallet.getBalance()
-    const fundAmount = utils.parseEther("0.1") // 0.1 CARE
+    const faucetBalance = await faucetWallet.provider.getBalance(faucetWallet.address)
+    const fundAmount = parseUnits("0.1", 18) // 0.1 CARE
 
-    if (faucetBalance.lt(fundAmount)) {
+    if (faucetBalance < fundAmount) {
       return NextResponse.json({ error: "Faucet is currently empty. Please try again later." }, { status: 503 })
     }
 

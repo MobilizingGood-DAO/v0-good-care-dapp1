@@ -1,125 +1,71 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, createContext, useContext, type ReactNode } from "react"
-import { Connection, type PublicKey, clusterApiUrl } from "@solana/web3.js"
-import { Program, AnchorProvider } from "@project-serum/anchor"
-import {
-  getPhantomWallet,
-  getSolflareWallet,
-  getSolletWallet,
-  getSlopeWallet,
-  getBackpackWallet,
-  getExodusWallet,
-  getGlowWallet,
-  getTorusWallet,
-  getLedgerWallet,
-  getMathWallet,
-  getSafePalWallet,
-  getSolongWallet,
-  getTokenPocketWallet,
-} from "@solana/wallet-adapter-wallets"
-import { useWallet, WalletProvider, ConnectionProvider } from "@solana/wallet-adapter-react"
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui"
 
-require("@solana/wallet-adapter-react-ui/styles.css")
+import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit"
+import { WagmiProvider } from "wagmi"
+import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
+import { defineChain } from "viem"
+import "@rainbow-me/rainbowkit/styles.css"
 
-// Define the context
-interface WalletContextState {
-  wallet: any
-  publicKey: PublicKey | null
-  connection: Connection | null
-  program: Program | null
-  // Add any other relevant state or functions here
-}
+// Define GOOD CARE Network chain
+const goodCareNetwork = defineChain({
+  id: 741741,
+  name: "GOOD CARE Network",
+  nativeCurrency: {
+    decimals: 18,
+    name: "CARE",
+    symbol: "CARE",
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://subnets.avax.network/goodcare/mainnet/rpc"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "GOOD CARE Explorer",
+      url: "https://subnets.avax.network/goodcare",
+    },
+  },
+})
 
-const WalletContext = createContext<WalletContextState | undefined>(undefined)
+// Configure wagmi with your WalletConnect project ID
+const config = getDefaultConfig({
+  appName: "GOOD CARE Network",
+  projectId: "96ac3be93570659af072073d3e77c2b6",
+  chains: [goodCareNetwork],
+  ssr: true,
+})
 
-// Define the provider
+// Create query client
+const queryClient = new QueryClient()
+
 interface WalletProviderProps {
-  children: ReactNode
-  network?: string
-  programId?: string
-  idl?: any
+  children: React.ReactNode
 }
 
-const WalletContextProvider: React.FC<WalletProviderProps> = ({ children, network = "devnet", programId, idl }) => {
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  const wallet = useWallet()
-  const endpoint = clusterApiUrl(network)
-  const connection = new Connection(endpoint, "processed")
-
-  const { publicKey } = wallet
-
-  const opts = {
-    preflightCommitment: "processed",
-  }
-
-  const provider = new AnchorProvider(connection, wallet, opts.preflightCommitment)
-
-  const program = programId && idl ? new Program(idl, programId, provider) : null
-
-  if (!mounted) {
-    return <>{children}</>
-  }
-
-  return <WalletContext.Provider value={{ wallet, publicKey, connection, program }}>{children}</WalletContext.Provider>
-}
-
-// Custom hook to use the context
-const useWalletContext = () => {
-  const context = useContext(WalletContext)
-  if (!context) {
-    throw new Error("useWalletContext must be used within a WalletContextProvider")
-  }
-  return context
-}
-
-const WalletProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Can be set to 'devnet', 'testnet', or 'mainnet-beta'
-  const network = "devnet"
-
-  const wallets = [
-    /* new PhantomWalletAdapter(),
-    new GlowWalletAdapter(),
-    new SlopeWalletAdapter(),
-    new SolflareWalletAdapter({ network }),
-    new TorusWalletAdapter(),
-    new LedgerWalletAdapter(),
-    new SolletWalletAdapter({ network }), */
-    getPhantomWallet(),
-    getSolflareWallet(),
-    getSolletWallet(),
-    getSlopeWallet(),
-    getBackpackWallet(),
-    getExodusWallet(),
-    getGlowWallet(),
-    getTorusWallet(),
-    getLedgerWallet(),
-    getMathWallet(),
-    getSafePalWallet(),
-    getSolongWallet(),
-    getTokenPocketWallet(),
-  ]
-
+export function WalletProvider({ children }: WalletProviderProps) {
   return (
-    <ConnectionProvider endpoint={clusterApiUrl(network)}>
-      <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
-      </WalletProvider>
-    </ConnectionProvider>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider>{children}</RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   )
 }
 
-export { WalletContextProvider, useWalletContext, WalletProviderWrapper }
+// Export for backward compatibility
+export { WalletProvider as WalletProviderWrapper }
 
-// Export the main WalletProvider for compatibility
-export { WalletProviderWrapper as WalletProvider }
-
-// Export useWallet hook for compatibility
-export { useWallet } from "@solana/wallet-adapter-react"
+// Custom hook for backward compatibility
+export function useWallet() {
+  // This can be implemented using wagmi hooks if needed
+  return {
+    publicKey: null,
+    connected: false,
+    connect: async () => {},
+    disconnect: () => {},
+    wallet: null,
+  }
+}
