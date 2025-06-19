@@ -9,30 +9,24 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import {
-  Heart,
-  Trophy,
-  Compass,
-  Wallet,
-  ExternalLink,
-  Copy,
-  Download,
-  RefreshCw,
-  Send,
-  Clock,
-  Flame,
-  Star,
-  Calendar,
-  User,
-} from "lucide-react"
-import { AuthService, type User as AuthUser } from "@/lib/auth-service"
-import { CheckInService, MOOD_EMOJIS, type UserStats, type CheckIn } from "@/lib/checkin-service"
-import { getTokenBalances, sendTransaction, exportPrivateKey } from "@/lib/avacloud-waas"
-import { switchToGoodCareNetwork } from "@/lib/blockchain-config"
+import { Heart, Trophy, Compass, ExternalLink, Copy, RefreshCw, Clock, Flame, Star, Calendar, User } from "lucide-react"
+import { useAccount, useDisconnect } from "wagmi"
+import { LocalCheckInService, MOOD_EMOJIS, type UserStats, type CheckIn } from "@/lib/local-checkin-service"
+
+// Simple user interface for localStorage
+interface LocalUser {
+  id: string
+  walletAddress: string
+  username?: string
+  email?: string
+}
 
 export default function GoodCareApp() {
   const { toast } = useToast()
-  const [user, setUser] = useState<AuthUser | null>(null)
+  const { address, isConnected } = useAccount()
+  const { disconnect } = useDisconnect()
+
+  const [user, setUser] = useState<LocalUser | null>(null)
   const [userStats, setUserStats] = useState<UserStats | null>(null)
   const [recentCheckIns, setRecentCheckIns] = useState<CheckIn[]>([])
   const [leaderboard, setLeaderboard] = useState<
@@ -46,51 +40,64 @@ export default function GoodCareApp() {
       rank: number
     }>
   >([])
-  const [tokenBalances, setTokenBalances] = useState<
-    Array<{
-      symbol: string
-      name: string
-      balance: string
-      decimals: number
-      contractAddress?: string
-    }>
-  >([])
   const [isLoading, setIsLoading] = useState(false)
   const [canCheckIn, setCanCheckIn] = useState(true)
   const [nextCheckIn, setNextCheckIn] = useState<Date | null>(null)
 
   // Authentication states
-  const [email, setEmail] = useState("")
   const [newUsername, setNewUsername] = useState("")
 
   // Check-in states
   const [selectedMood, setSelectedMood] = useState<keyof typeof MOOD_EMOJIS | null>(null)
   const [gratitudeNote, setGratitudeNote] = useState("")
 
-  // Send tokens states
-  const [sendTo, setSendTo] = useState("")
-  const [sendAmount, setSendAmount] = useState("")
-  const [sendToken, setSendToken] = useState("CARE")
+  // Create or load user when wallet connects
+  useEffect(() => {
+    if (isConnected && address) {
+      // Try to load existing user
+      const storedUser = localStorage.getItem("goodcare_current_user")
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser)
+        if (parsedUser.walletAddress === address) {
+          setUser(parsedUser)
+          return
+        }
+      }
+
+      // Create new user
+      const newUser: LocalUser = {
+        id: `user_${address.slice(-8)}`,
+        walletAddress: address,
+      }
+
+      localStorage.setItem("goodcare_current_user", JSON.stringify(newUser))
+      setUser(newUser)
+    } else {
+      setUser(null)
+    }
+  }, [isConnected, address])
+
+  // Load user data when user changes
+  useEffect(() => {
+    if (user) {
+      loadUserData(user.id)
+      loadLeaderboard()
+    }
+  }, [user])
 
   // Load user data
   const loadUserData = async (userId: string) => {
     try {
       const [stats, checkIns, eligibility] = await Promise.all([
-        CheckInService.getUserStats(userId),
-        CheckInService.getRecentCheckIns(userId, 5),
-        CheckInService.canCheckIn(userId),
+        LocalCheckInService.getUserStats(userId),
+        LocalCheckInService.getRecentCheckIns(userId, 5),
+        LocalCheckInService.canCheckIn(userId),
       ])
 
       setUserStats(stats)
       setRecentCheckIns(checkIns)
       setCanCheckIn(eligibility.canCheckIn)
       setNextCheckIn(eligibility.nextCheckIn || null)
-
-      // Load token balances
-      if (user?.walletAddress) {
-        const balances = await getTokenBalances(user.walletAddress)
-        setTokenBalances(balances)
-      }
     } catch (error) {
       console.error("Error loading user data:", error)
     }
@@ -99,105 +106,11 @@ export default function GoodCareApp() {
   // Load leaderboard
   const loadLeaderboard = async () => {
     try {
-      const data = await CheckInService.getLeaderboard(100)
+      const data = await LocalCheckInService.getLeaderboard(100)
       setLeaderboard(data)
     } catch (error) {
       console.error("Error loading leaderboard:", error)
     }
-  }
-
-  useEffect(() => {
-    if (user) {
-      loadUserData(user.id)
-    }
-    loadLeaderboard()
-  }, [user])
-
-  // Authentication handlers
-  const handleEmailSignIn = async () => {
-    if (!email) return
-
-    setIsLoading(true)
-    try {
-      const result = await AuthService.signInWithEmail(email)
-      if (result.success && result.user) {
-        setUser(result.user)
-        toast({
-          title: "Welcome to GOOD CARE!",
-          description: "Your embedded wallet has been created.",
-        })
-      } else {
-        toast({
-          title: "Sign in failed",
-          description: result.error,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Something went wrong",
-        variant: "destructive",
-      })
-    }
-    setIsLoading(false)
-  }
-
-  const handleSocialSignIn = async (provider: "twitter" | "google") => {
-    setIsLoading(true)
-    try {
-      const result = await AuthService.signInWithSocial(provider)
-      if (result.success && result.user) {
-        setUser(result.user)
-        toast({
-          title: "Welcome to GOOD CARE!",
-          description: `Signed in with ${provider}. Your embedded wallet has been created.`,
-        })
-      } else {
-        toast({
-          title: "Sign in failed",
-          description: result.error,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Something went wrong",
-        variant: "destructive",
-      })
-    }
-    setIsLoading(false)
-  }
-
-  const handleWalletConnect = async () => {
-    setIsLoading(true)
-    try {
-      // Switch to GOOD CARE network first
-      await switchToGoodCareNetwork()
-
-      const result = await AuthService.connectWallet()
-      if (result.success && result.user) {
-        setUser(result.user)
-        toast({
-          title: "Wallet connected!",
-          description: "Welcome to GOOD CARE Network.",
-        })
-      } else {
-        toast({
-          title: "Connection failed",
-          description: result.error,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Something went wrong",
-        variant: "destructive",
-      })
-    }
-    setIsLoading(false)
   }
 
   // Check-in handler
@@ -206,11 +119,11 @@ export default function GoodCareApp() {
 
     setIsLoading(true)
     try {
-      const result = await CheckInService.recordCheckIn(user.id, selectedMood, gratitudeNote || undefined)
+      const result = await LocalCheckInService.recordCheckIn(user.id, selectedMood, gratitudeNote || undefined)
 
       if (result.success) {
         toast({
-          title: "Check-in recorded!",
+          title: "Check-in recorded! 🎉",
           description: `You earned ${result.checkIn?.finalPoints} CARE points!`,
         })
 
@@ -220,6 +133,7 @@ export default function GoodCareApp() {
 
         // Reload user data
         await loadUserData(user.id)
+        await loadLeaderboard()
       } else {
         toast({
           title: "Check-in failed",
@@ -241,114 +155,15 @@ export default function GoodCareApp() {
   const handleUpdateUsername = async () => {
     if (!user || !newUsername) return
 
-    setIsLoading(true)
-    try {
-      const result = await AuthService.updateUsername(user.id, newUsername)
-      if (result.success) {
-        setUser({ ...user, username: newUsername })
-        setNewUsername("")
-        toast({
-          title: "Username updated!",
-          description: "Your username has been saved.",
-        })
-      } else {
-        toast({
-          title: "Update failed",
-          description: result.error,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Something went wrong",
-        variant: "destructive",
-      })
-    }
-    setIsLoading(false)
-  }
+    const updatedUser = { ...user, username: newUsername }
+    localStorage.setItem("goodcare_current_user", JSON.stringify(updatedUser))
+    setUser(updatedUser)
+    setNewUsername("")
 
-  // Export wallet handler
-  const handleExportWallet = async () => {
-    if (!user || user.walletType !== "embedded" || !user.walletId) {
-      toast({
-        title: "Cannot export",
-        description: "Only embedded wallets can be exported",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const result = await exportPrivateKey(user.walletId)
-      if (result.success) {
-        // Copy to clipboard
-        await navigator.clipboard.writeText(result.privateKey)
-        toast({
-          title: "Private key exported!",
-          description: "Private key copied to clipboard. Keep it safe!",
-        })
-      } else {
-        toast({
-          title: "Export failed",
-          description: result.error,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Something went wrong",
-        variant: "destructive",
-      })
-    }
-    setIsLoading(false)
-  }
-
-  // Send tokens handler
-  const handleSendTokens = async () => {
-    if (!user || !sendTo || !sendAmount) return
-
-    setIsLoading(true)
-    try {
-      const tokenAddress = sendToken === "GCT" ? "0x10acd62bdfa7028b0A96710a9f6406446D2b1164" : undefined
-
-      const result = await sendTransaction({
-        from: user.walletAddress,
-        to: sendTo,
-        value: sendAmount,
-        tokenAddress,
-      })
-
-      if (result.success) {
-        toast({
-          title: "Transaction sent!",
-          description: `Sent ${sendAmount} ${sendToken} to ${sendTo}`,
-        })
-
-        // Reset form
-        setSendTo("")
-        setSendAmount("")
-
-        // Reload balances
-        const balances = await getTokenBalances(user.walletAddress)
-        setTokenBalances(balances)
-      } else {
-        toast({
-          title: "Transaction failed",
-          description: result.error,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Something went wrong",
-        variant: "destructive",
-      })
-    }
-    setIsLoading(false)
+    toast({
+      title: "Username updated!",
+      description: "Your username has been saved.",
+    })
   }
 
   // Copy address handler
@@ -360,8 +175,8 @@ export default function GoodCareApp() {
     })
   }
 
-  // If not authenticated, show login screen
-  if (!user) {
+  // If not connected, show connect screen
+  if (!isConnected || !user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -371,68 +186,9 @@ export default function GoodCareApp() {
             <CardDescription>Your daily wellness companion on the GOOD CARE Network</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Email Sign In */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <Button onClick={handleEmailSignIn} disabled={isLoading || !email} className="w-full">
-                {isLoading ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Heart className="mr-2 h-4 w-4" />}
-                Sign in with Email
-              </Button>
-            </div>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or</span>
-              </div>
-            </div>
-
-            {/* Social Sign In */}
-            <div className="space-y-2">
-              <Button
-                onClick={() => handleSocialSignIn("google")}
-                disabled={isLoading}
-                variant="outline"
-                className="w-full"
-              >
-                Sign in with Google
-              </Button>
-              <Button
-                onClick={() => handleSocialSignIn("twitter")}
-                disabled={isLoading}
-                variant="outline"
-                className="w-full"
-              >
-                Sign in with Twitter
-              </Button>
-            </div>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or connect existing wallet</span>
-              </div>
-            </div>
-
-            {/* Wallet Connect */}
-            <Button onClick={handleWalletConnect} disabled={isLoading} variant="outline" className="w-full">
-              <Wallet className="mr-2 h-4 w-4" />
-              Connect Wallet
-            </Button>
-
+            <p className="text-center text-muted-foreground">Connect your wallet to start your wellness journey</p>
             <div className="text-xs text-muted-foreground text-center">
-              By signing in, you agree to join the GOOD CARE Network on subnet 741741
+              Supports MetaMask, Core, and other EVM wallets
             </div>
           </CardContent>
         </Card>
@@ -453,9 +209,14 @@ export default function GoodCareApp() {
           <Badge variant="outline" className="mt-2">
             {userStats?.level ? `Level ${userStats.level}` : "Level 1"} • {userStats?.totalPoints || 0} CARE Points
           </Badge>
+          <div className="mt-2">
+            <Button variant="outline" size="sm" onClick={() => disconnect()}>
+              Disconnect Wallet
+            </Button>
+          </div>
         </div>
 
-        <Tabs defaultValue="next-steps" className="w-full">
+        <Tabs defaultValue="check-in" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="next-steps" className="flex items-center gap-2">
               <Compass className="h-4 w-4" />
@@ -709,44 +470,47 @@ export default function GoodCareApp() {
                   <Trophy className="h-5 w-5" />
                   CARE Community Leaderboard
                 </CardTitle>
-                <CardDescription>Top 100 community members by CARE points</CardDescription>
+                <CardDescription>Top community members by CARE points</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {leaderboard.map((entry) => (
-                    <div
-                      key={entry.userId}
-                      className={`flex items-center justify-between p-3 rounded-lg ${
-                        entry.userId === user.id ? "bg-green-100 border border-green-200" : "bg-gray-50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white border">
-                          <span className="text-sm font-bold">
-                            {entry.rank <= 3 ? (entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : "🥉") : entry.rank}
-                          </span>
+                {leaderboard.length > 0 ? (
+                  <div className="space-y-3">
+                    {leaderboard.map((entry) => (
+                      <div
+                        key={entry.userId}
+                        className="flex items-center justify-between p-3 rounded-lg bg-green-100 border border-green-200"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-white border">
+                            <span className="text-sm font-bold">🥇</span>
+                          </div>
+                          <div>
+                            <p className="font-medium">{entry.username}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {entry.walletAddress.slice(0, 6)}...{entry.walletAddress.slice(-4)}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">{entry.username}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {entry.walletAddress.slice(0, 6)}...{entry.walletAddress.slice(-4)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold">{entry.totalPoints} points</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>Level {entry.level}</span>
-                          {entry.currentStreak > 0 && (
-                            <Badge variant="outline" className="text-xs">
-                              {entry.currentStreak}🔥
-                            </Badge>
-                          )}
+                        <div className="text-right">
+                          <p className="font-bold">{entry.totalPoints} points</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>Level {entry.level}</span>
+                            {entry.currentStreak > 0 && (
+                              <Badge variant="outline" className="text-xs">
+                                {entry.currentStreak}🔥
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Trophy className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">Complete your first check-in to appear on the leaderboard!</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -762,7 +526,7 @@ export default function GoodCareApp() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div>
                     <Label>Wallet Address</Label>
                     <div className="flex items-center gap-2">
@@ -771,10 +535,6 @@ export default function GoodCareApp() {
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
-                  </div>
-                  <div>
-                    <Label>Wallet Type</Label>
-                    <Input value={user.walletType === "embedded" ? "Embedded (Social)" : "External"} readOnly />
                   </div>
                 </div>
 
@@ -787,18 +547,11 @@ export default function GoodCareApp() {
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
                     />
-                    <Button onClick={handleUpdateUsername} disabled={!newUsername || isLoading}>
+                    <Button onClick={handleUpdateUsername} disabled={!newUsername}>
                       Update
                     </Button>
                   </div>
                 </div>
-
-                {user.walletType === "embedded" && (
-                  <Button onClick={handleExportWallet} disabled={isLoading} variant="outline" className="w-full">
-                    <Download className="mr-2 h-4 w-4" />
-                    Export Private Key
-                  </Button>
-                )}
               </CardContent>
             </Card>
 
@@ -828,80 +581,6 @@ export default function GoodCareApp() {
                     <p className="text-2xl font-bold text-purple-600">{userStats?.totalCheckins || 0}</p>
                     <p className="text-sm text-muted-foreground">Check-ins</p>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Token Balances */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Wallet className="h-5 w-5" />
-                  Token Balances
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {tokenBalances.map((token) => (
-                    <div key={token.symbol} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">
-                          {token.name} ({token.symbol})
-                        </p>
-                        {token.contractAddress && (
-                          <p className="text-xs text-muted-foreground">
-                            {token.contractAddress.slice(0, 6)}...{token.contractAddress.slice(-4)}
-                          </p>
-                        )}
-                      </div>
-                      <p className="font-bold">{token.balance}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Send Tokens */}
-                <div className="space-y-3 pt-4 border-t">
-                  <h4 className="font-medium">Send Tokens</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label htmlFor="sendTo">To Address</Label>
-                      <Input
-                        id="sendTo"
-                        placeholder="0x..."
-                        value={sendTo}
-                        onChange={(e) => setSendTo(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="sendAmount">Amount</Label>
-                      <Input
-                        id="sendAmount"
-                        placeholder="0.0"
-                        value={sendAmount}
-                        onChange={(e) => setSendAmount(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant={sendToken === "CARE" ? "default" : "outline"}
-                      onClick={() => setSendToken("CARE")}
-                      size="sm"
-                    >
-                      CARE
-                    </Button>
-                    <Button
-                      variant={sendToken === "GCT" ? "default" : "outline"}
-                      onClick={() => setSendToken("GCT")}
-                      size="sm"
-                    >
-                      GCT
-                    </Button>
-                  </div>
-                  <Button onClick={handleSendTokens} disabled={!sendTo || !sendAmount || isLoading} className="w-full">
-                    <Send className="mr-2 h-4 w-4" />
-                    Send {sendToken}
-                  </Button>
                 </div>
               </CardContent>
             </Card>
