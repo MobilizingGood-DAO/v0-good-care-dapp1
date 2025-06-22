@@ -1,12 +1,10 @@
 "use client"
 
 import type React from "react"
-
 import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit"
 import { WagmiProvider } from "wagmi"
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
 import { defineChain } from "viem"
-import "@rainbow-me/rainbowkit/styles.css"
 
 // Define GOOD CARE Network chain
 const goodCareNetwork = defineChain({
@@ -49,7 +47,85 @@ export function WalletProvider({ children }: WalletProviderProps) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>{children}</RainbowKitProvider>
+        <RainbowKitProvider
+          theme={{
+            lightMode: {
+              colors: {
+                accentColor: "#10b981",
+                accentColorForeground: "white",
+                actionButtonBorder: "rgba(0, 0, 0, 0.04)",
+                actionButtonBorderMobile: "rgba(0, 0, 0, 0.06)",
+                actionButtonSecondaryBackground: "rgba(0, 0, 0, 0.06)",
+                closeButton: "rgba(60, 66, 66, 0.8)",
+                closeButtonBackground: "rgba(0, 0, 0, 0.06)",
+                connectButtonBackground: "#10b981",
+                connectButtonBackgroundError: "#FF494A",
+                connectButtonInnerBackground: "linear-gradient(0deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.06))",
+                connectButtonText: "white",
+                connectButtonTextError: "white",
+                connectionIndicator: "#30E000",
+                downloadBottomCardBackground:
+                  "linear-gradient(126deg, rgba(255, 255, 255, 0) 9.49%, rgba(171, 171, 171, 0.04) 71.04%), #FFFFFF",
+                downloadTopCardBackground:
+                  "linear-gradient(126deg, rgba(171, 171, 171, 0.2) 9.49%, rgba(255, 255, 255, 0) 71.04%), #FFFFFF",
+                error: "#FF494A",
+                generalBorder: "rgba(0, 0, 0, 0.06)",
+                generalBorderDim: "rgba(0, 0, 0, 0.03)",
+                menuItemBackground: "rgba(60, 66, 66, 0.1)",
+                modalBackdrop: "rgba(0, 0, 0, 0.3)",
+                modalBackground: "white",
+                modalBorder: "rgba(0, 0, 0, 0.06)",
+                modalText: "#25292E",
+                modalTextDim: "rgba(60, 66, 66, 0.3)",
+                modalTextSecondary: "rgba(60, 66, 66, 0.6)",
+                profileAction: "white",
+                profileActionHover: "rgba(255, 255, 255, 0.5)",
+                profileForeground: "rgba(60, 66, 66, 0.06)",
+                selectedOptionBorder: "rgba(60, 66, 66, 0.1)",
+                standby: "#FFD641",
+              },
+            },
+            darkMode: {
+              colors: {
+                accentColor: "#10b981",
+                accentColorForeground: "white",
+                actionButtonBorder: "rgba(255, 255, 255, 0.04)",
+                actionButtonBorderMobile: "rgba(255, 255, 255, 0.08)",
+                actionButtonSecondaryBackground: "rgba(255, 255, 255, 0.08)",
+                closeButton: "rgba(224, 232, 255, 0.6)",
+                closeButtonBackground: "rgba(255, 255, 255, 0.08)",
+                connectButtonBackground: "#10b981",
+                connectButtonBackgroundError: "#FF494A",
+                connectButtonInnerBackground:
+                  "linear-gradient(0deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.15))",
+                connectButtonText: "white",
+                connectButtonTextError: "white",
+                connectionIndicator: "#30E000",
+                downloadBottomCardBackground:
+                  "linear-gradient(126deg, rgba(255, 255, 255, 0) 9.49%, rgba(255, 255, 255, 0.15) 71.04%), #1A1B1F",
+                downloadTopCardBackground:
+                  "linear-gradient(126deg, rgba(255, 255, 255, 0.15) 9.49%, rgba(255, 255, 255, 0) 71.04%), #1A1B1F",
+                error: "#FF494A",
+                generalBorder: "rgba(255, 255, 255, 0.08)",
+                generalBorderDim: "rgba(255, 255, 255, 0.04)",
+                menuItemBackground: "rgba(224, 232, 255, 0.1)",
+                modalBackdrop: "rgba(0, 0, 0, 0.5)",
+                modalBackground: "#1A1B1F",
+                modalBorder: "rgba(255, 255, 255, 0.08)",
+                modalText: "#FFF",
+                modalTextDim: "rgba(224, 232, 255, 0.3)",
+                modalTextSecondary: "rgba(255, 255, 255, 0.6)",
+                profileAction: "#1A1B1F",
+                profileActionHover: "rgba(255, 255, 255, 0.2)",
+                profileForeground: "rgba(224, 232, 255, 0.05)",
+                selectedOptionBorder: "rgba(224, 232, 255, 0.1)",
+                standby: "#FFD641",
+              },
+            },
+          }}
+        >
+          {children}
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   )
