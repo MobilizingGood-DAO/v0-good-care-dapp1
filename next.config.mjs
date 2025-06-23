@@ -9,25 +9,20 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      // Mock browser-only APIs for server-side rendering
-      config.resolve.alias = {
-        ...config.resolve.alias,
-      }
-    }
-    
+  webpack: (config, { isServer, webpack }) => {
+    // Configure fallbacks for browser-only APIs
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
       net: false,
       tls: false,
+      crypto: false,
     }
     
-    // Add global polyfills for server-side
+    // Add global polyfills for server-side rendering
     if (isServer) {
       config.plugins.push(
-        new config.webpack.DefinePlugin({
+        new webpack.DefinePlugin({
           'typeof window': JSON.stringify('undefined'),
         })
       )
