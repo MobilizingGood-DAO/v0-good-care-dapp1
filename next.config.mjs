@@ -24,6 +24,7 @@ const nextConfig = {
       config.plugins.push(
         new webpack.DefinePlugin({
           'typeof window': JSON.stringify('undefined'),
+          'typeof indexedDB': JSON.stringify('undefined'), // Added indexedDB fallback
         })
       )
     }

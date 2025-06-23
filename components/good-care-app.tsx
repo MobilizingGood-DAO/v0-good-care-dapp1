@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { Heart, Trophy, Compass, ExternalLink, Copy, RefreshCw, Clock, Flame, Star, Calendar, User } from "lucide-react"
 import { useAccount, useDisconnect } from "wagmi"
-import { LocalCheckInService, MOOD_EMOJIS, type UserStats, type CheckIn } from "@/lib/local-checkin-service"
+import { HybridCommunityService } from "@/lib/hybrid-community-service"
+import { MOOD_EMOJIS } from "@/lib/local-checkin-service"
 
 // Simple user interface for localStorage
 interface LocalUser {
@@ -19,6 +20,22 @@ interface LocalUser {
   walletAddress: string
   username?: string
   email?: string
+}
+
+interface UserStats {
+  totalPoints: number
+  currentStreak: number
+  level: number
+  totalCheckins: number
+}
+
+interface CheckIn {
+  id: string
+  userId: string
+  emoji: string
+  timestamp: number
+  gratitudeNote?: string
+  finalPoints: number
 }
 
 export default function GoodCareApp() {
@@ -54,24 +71,21 @@ export default function GoodCareApp() {
   // Create or load user when wallet connects
   useEffect(() => {
     if (isConnected && address) {
-      // Try to load existing user
-      const storedUser = localStorage.getItem("goodcare_current_user")
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser)
-        if (parsedUser.walletAddress === address) {
-          setUser(parsedUser)
-          return
+      const initUser = async () => {
+        const result = await HybridCommunityService.initializeUser(address, {
+          username: `User_${address.slice(-6)}`,
+        })
+
+        if (result.success && result.userId) {
+          const newUser: LocalUser = {
+            id: result.userId,
+            walletAddress: address,
+          }
+          setUser(newUser)
         }
       }
 
-      // Create new user
-      const newUser: LocalUser = {
-        id: `user_${address.slice(-8)}`,
-        walletAddress: address,
-      }
-
-      localStorage.setItem("goodcare_current_user", JSON.stringify(newUser))
-      setUser(newUser)
+      initUser()
     } else {
       setUser(null)
     }
@@ -88,16 +102,16 @@ export default function GoodCareApp() {
   // Load user data
   const loadUserData = async (userId: string) => {
     try {
-      const [stats, checkIns, eligibility] = await Promise.all([
-        LocalCheckInService.getUserStats(userId),
-        LocalCheckInService.getRecentCheckIns(userId, 5),
-        LocalCheckInService.canCheckIn(userId),
+      const [stats, checkIns] = await Promise.all([
+        HybridCommunityService.getUserStats(userId),
+        HybridCommunityService.getRecentCheckIns(userId, 5),
       ])
 
       setUserStats(stats)
       setRecentCheckIns(checkIns)
-      setCanCheckIn(eligibility.canCheckIn)
-      setNextCheckIn(eligibility.nextCheckIn || null)
+
+      // Check if can check in (simplified for hybrid service)
+      setCanCheckIn(true) // Will be validated on actual check-in
     } catch (error) {
       console.error("Error loading user data:", error)
     }
@@ -106,7 +120,7 @@ export default function GoodCareApp() {
   // Load leaderboard
   const loadLeaderboard = async () => {
     try {
-      const data = await LocalCheckInService.getLeaderboard(100)
+      const data = await HybridCommunityService.getLeaderboard(100)
       setLeaderboard(data)
     } catch (error) {
       console.error("Error loading leaderboard:", error)
@@ -119,12 +133,17 @@ export default function GoodCareApp() {
 
     setIsLoading(true)
     try {
-      const result = await LocalCheckInService.recordCheckIn(user.id, selectedMood, gratitudeNote || undefined)
+      const result = await HybridCommunityService.recordCheckIn(
+        user.id,
+        user.walletAddress,
+        selectedMood,
+        gratitudeNote || undefined,
+      )
 
       if (result.success) {
         toast({
           title: "Check-in recorded! 🎉",
-          description: `You earned ${result.checkIn?.finalPoints} CARE points!`,
+          description: `You earned ${result.points} CARE points!`,
         })
 
         // Reset form
