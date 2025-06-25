@@ -5,6 +5,7 @@ import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit"
 import { WagmiProvider } from "wagmi"
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
 import { defineChain } from "viem"
+import { metaMask, walletConnect, coinbaseWallet } from "wagmi/connectors"
 
 // Define GOOD CARE Network chain
 const goodCareNetwork = defineChain({
@@ -28,11 +29,32 @@ const goodCareNetwork = defineChain({
   },
 })
 
-// Configure wagmi with your WalletConnect project ID
+// Configure wagmi with specific connectors for mobile
 const config = getDefaultConfig({
   appName: "GOOD CARE Network",
   projectId: "96ac3be93570659af072073d3e77c2b6",
   chains: [goodCareNetwork],
+  connectors: [
+    metaMask({
+      dappMetadata: {
+        name: "GOOD CARE Network",
+        url: "https://goodonavax.vercel.app",
+      },
+    }),
+    coinbaseWallet({
+      appName: "GOOD CARE Network",
+      appLogoUrl: "https://goodonavax.vercel.app/placeholder-logo.png",
+    }),
+    walletConnect({
+      projectId: "96ac3be93570659af072073d3e77c2b6",
+      metadata: {
+        name: "GOOD CARE Network",
+        description: "Your daily wellness companion",
+        url: "https://goodonavax.vercel.app",
+        icons: ["https://goodonavax.vercel.app/placeholder-logo.png"],
+      },
+    }),
+  ],
   ssr: true,
 })
 
@@ -48,6 +70,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
+          modalSize="compact"
           theme={{
             lightMode: {
               colors: {
@@ -85,43 +108,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
                 standby: "#FFD641",
               },
             },
-            darkMode: {
-              colors: {
-                accentColor: "#10b981",
-                accentColorForeground: "white",
-                actionButtonBorder: "rgba(255, 255, 255, 0.04)",
-                actionButtonBorderMobile: "rgba(255, 255, 255, 0.08)",
-                actionButtonSecondaryBackground: "rgba(255, 255, 255, 0.08)",
-                closeButton: "rgba(224, 232, 255, 0.6)",
-                closeButtonBackground: "rgba(255, 255, 255, 0.08)",
-                connectButtonBackground: "#10b981",
-                connectButtonBackgroundError: "#FF494A",
-                connectButtonInnerBackground:
-                  "linear-gradient(0deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.15))",
-                connectButtonText: "white",
-                connectButtonTextError: "white",
-                connectionIndicator: "#30E000",
-                downloadBottomCardBackground:
-                  "linear-gradient(126deg, rgba(255, 255, 255, 0) 9.49%, rgba(255, 255, 255, 0.15) 71.04%), #1A1B1F",
-                downloadTopCardBackground:
-                  "linear-gradient(126deg, rgba(255, 255, 255, 0.15) 9.49%, rgba(255, 255, 255, 0) 71.04%), #1A1B1F",
-                error: "#FF494A",
-                generalBorder: "rgba(255, 255, 255, 0.08)",
-                generalBorderDim: "rgba(255, 255, 255, 0.04)",
-                menuItemBackground: "rgba(224, 232, 255, 0.1)",
-                modalBackdrop: "rgba(0, 0, 0, 0.5)",
-                modalBackground: "#1A1B1F",
-                modalBorder: "rgba(255, 255, 255, 0.08)",
-                modalText: "#FFF",
-                modalTextDim: "rgba(224, 232, 255, 0.3)",
-                modalTextSecondary: "rgba(255, 255, 255, 0.6)",
-                profileAction: "#1A1B1F",
-                profileActionHover: "rgba(255, 255, 255, 0.2)",
-                profileForeground: "rgba(224, 232, 255, 0.05)",
-                selectedOptionBorder: "rgba(224, 232, 255, 0.1)",
-                standby: "#FFD641",
-              },
-            },
           }}
         >
           {children}
@@ -136,7 +122,6 @@ export { WalletProvider as WalletProviderWrapper }
 
 // Custom hook for backward compatibility
 export function useWallet() {
-  // This can be implemented using wagmi hooks if needed
   return {
     publicKey: null,
     connected: false,
