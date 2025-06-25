@@ -1,13 +1,8 @@
-import {
-  SupabaseCommunityService,
-  type LeaderboardEntry,
-  type UserStats,
-  type CheckInRecord,
-} from "./supabase-community-service"
+import { APICommunityService, type LeaderboardEntry, type UserStats, type CheckInRecord } from "./api-community-service"
 import { LocalCheckInService, MOOD_EMOJIS } from "./local-checkin-service"
 
 export class HybridCommunityService {
-  // Try Supabase first, fallback to localStorage
+  // Try API first, fallback to localStorage
   static async recordCheckIn(
     userId: string,
     walletAddress: string,
@@ -15,24 +10,24 @@ export class HybridCommunityService {
     gratitudeNote?: string,
   ): Promise<{ success: boolean; points: number; newStreak: number; error?: string }> {
     try {
-      // Try Supabase first
+      // Try API first
       const moodValue = MOOD_EMOJIS[emoji].value
       const moodLabel = MOOD_EMOJIS[emoji].label
 
-      const supabaseResult = await SupabaseCommunityService.recordCheckIn(userId, moodValue, moodLabel, gratitudeNote)
+      const apiResult = await APICommunityService.recordCheckIn(walletAddress, moodValue, moodLabel, gratitudeNote)
 
-      if (supabaseResult.success) {
+      if (apiResult.success) {
         // Also save to localStorage as backup
         await LocalCheckInService.recordCheckIn(userId, emoji, gratitudeNote)
 
         return {
           success: true,
-          points: supabaseResult.checkIn?.points || 0,
-          newStreak: supabaseResult.checkIn?.streak || 1,
+          points: apiResult.points || 0,
+          newStreak: apiResult.streak || 1,
         }
       }
     } catch (error) {
-      console.warn("Supabase check-in failed, using localStorage:", error)
+      console.warn("API check-in failed, using localStorage:", error)
     }
 
     // Fallback to localStorage
@@ -41,13 +36,13 @@ export class HybridCommunityService {
 
   static async getLeaderboard(limit = 100): Promise<LeaderboardEntry[]> {
     try {
-      // Try Supabase first
-      const supabaseLeaderboard = await SupabaseCommunityService.getLeaderboard(limit)
-      if (supabaseLeaderboard.length > 0) {
-        return supabaseLeaderboard
+      // Try API first
+      const apiLeaderboard = await APICommunityService.getLeaderboard(limit)
+      if (apiLeaderboard.length > 0) {
+        return apiLeaderboard
       }
     } catch (error) {
-      console.warn("Supabase leaderboard failed, using localStorage:", error)
+      console.warn("API leaderboard failed, using localStorage:", error)
     }
 
     // Fallback to localStorage (limited to current user)
@@ -58,22 +53,22 @@ export class HybridCommunityService {
       walletAddress: entry.walletAddress,
       totalPoints: entry.totalPoints,
       currentStreak: entry.currentStreak,
-      longestStreak: 0, // Not tracked in local service
+      longestStreak: 0,
       level: entry.level,
-      totalCheckins: 0, // Not tracked in local service
+      totalCheckins: 0,
       rank: entry.rank,
     }))
   }
 
   static async getUserStats(userId: string): Promise<UserStats | null> {
     try {
-      // Try Supabase first
-      const supabaseStats = await SupabaseCommunityService.getUserStats(userId)
-      if (supabaseStats) {
-        return supabaseStats
+      // Try API first
+      const { stats } = await APICommunityService.getUserStats(userId)
+      if (stats) {
+        return stats
       }
     } catch (error) {
-      console.warn("Supabase stats failed, using localStorage:", error)
+      console.warn("API stats failed, using localStorage:", error)
     }
 
     // Fallback to localStorage
@@ -81,27 +76,24 @@ export class HybridCommunityService {
     if (!localStats) return null
 
     return {
-      id: `local_${userId}`,
-      userId,
       totalPoints: localStats.totalPoints,
       currentStreak: localStats.currentStreak,
       longestStreak: localStats.longestStreak,
       level: localStats.level,
       totalCheckins: localStats.totalCheckins,
       lastCheckin: localStats.lastCheckin,
-      updatedAt: new Date().toISOString(),
     }
   }
 
   static async getRecentCheckIns(userId: string, limit = 10): Promise<CheckInRecord[]> {
     try {
-      // Try Supabase first
-      const supabaseCheckIns = await SupabaseCommunityService.getRecentCheckIns(userId, limit)
-      if (supabaseCheckIns.length > 0) {
-        return supabaseCheckIns
+      // Try API first
+      const { checkIns } = await APICommunityService.getUserStats(userId)
+      if (checkIns.length > 0) {
+        return checkIns.slice(0, limit)
       }
     } catch (error) {
-      console.warn("Supabase check-ins failed, using localStorage:", error)
+      console.warn("API check-ins failed, using localStorage:", error)
     }
 
     // Fallback to localStorage
@@ -113,9 +105,8 @@ export class HybridCommunityService {
       mood: checkIn.moodValue,
       moodLabel: checkIn.emoji,
       points: checkIn.finalPoints,
-      streak: 1, // Not properly tracked in local service
+      streak: 1,
       gratitudeNote: checkIn.gratitudeNote,
-      resourcesViewed: [],
       createdAt: checkIn.timestamp,
     }))
   }
@@ -128,13 +119,13 @@ export class HybridCommunityService {
     },
   ): Promise<{ success: boolean; userId?: string; error?: string }> {
     try {
-      // Try to create/get user in Supabase
-      const result = await SupabaseCommunityService.getOrCreateUser(walletAddress, userData)
+      // Try to create/get user via API
+      const result = await APICommunityService.getOrCreateUser(walletAddress, userData?.username)
       if (result.success && result.user) {
         return { success: true, userId: result.user.id }
       }
     } catch (error) {
-      console.warn("Supabase user creation failed, using localStorage:", error)
+      console.warn("API user creation failed, using localStorage:", error)
     }
 
     // Fallback to localStorage user ID
