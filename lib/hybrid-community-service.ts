@@ -8,13 +8,20 @@ export class HybridCommunityService {
     walletAddress: string,
     emoji: keyof typeof MOOD_EMOJIS,
     gratitudeNote?: string,
+    isPublic?: boolean,
   ): Promise<{ success: boolean; points: number; newStreak: number; error?: string }> {
     try {
       // Try API first
       const moodValue = MOOD_EMOJIS[emoji].value
       const moodLabel = MOOD_EMOJIS[emoji].label
 
-      const apiResult = await APICommunityService.recordCheckIn(walletAddress, moodValue, moodLabel, gratitudeNote)
+      const apiResult = await APICommunityService.recordCheckIn(
+        walletAddress,
+        moodValue,
+        moodLabel,
+        gratitudeNote,
+        isPublic,
+      )
 
       if (apiResult.success) {
         // Also save to localStorage as backup
