@@ -1,194 +1,98 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+import { supabase } from "@/lib/supabase"
 
 export async function POST(request: NextRequest) {
   try {
-    const { walletAddress, mood, moodLabel, gratitudeNote, isGratitudePublic } = await request.json()
+    const body = await request.json()
+    const { userId, username, mood, gratitude, isPublic, points } = body
 
-    if (!walletAddress || mood === undefined || !moodLabel) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    if (!userId || !username || !mood) {
+      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
     }
 
-    // Get or create user
-    let { data: user, error: userError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("wallet_address", walletAddress)
-      .single()
-
-    if (userError && userError.code === "PGRST116") {
-      // User doesn't exist, create them
-      const { data: newUser, error: createError } = await supabase
-        .from("users")
-        .insert({
-          wallet_address: walletAddress,
-          username: `User_${walletAddress.slice(-6)}`,
-        })
-        .select()
-        .single()
-
-      if (createError) {
-        console.error("Error creating user:", createError)
-        return NextResponse.json({ error: "Failed to create user" }, { status: 500 })
-      }
-
-      user = newUser
-
-      // Initialize user stats
-      await supabase.from("user_stats").insert({
-        user_id: user.id,
-        total_points: 0,
-        current_streak: 0,
-        longest_streak: 0,
-        level: 1,
-        total_checkins: 0,
-      })
-    } else if (userError) {
-      console.error("Error fetching user:", userError)
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
+    // Calculate points based on check-in completeness
+    let calculatedPoints = 10 // Base points
+    if (gratitude && gratitude.trim().length > 0) {
+      calculatedPoints += 5 // Bonus for gratitude
     }
 
-    // Check if user already checked in today
-    const today = new Date().toISOString().split("T")[0]
-    const { data: existingCheckin, error: checkinError } = await supabase
-      .from("daily_checkins")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("date", today)
-      .single()
-
-    if (checkinError && checkinError.code !== "PGRST116") {
-      console.error("Error checking existing checkin:", checkinError)
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
+    const checkinData = {
+      user_id: userId,
+      mood,
+      gratitude: gratitude || null,
+      is_public: isPublic || false,
+      points: points || calculatedPoints,
+      created_at: new Date().toISOString(),
     }
 
-    if (existingCheckin) {
-      return NextResponse.json({ error: "Already checked in today" }, { status: 400 })
-    }
+    // Insert the check-in
+    const { data, error } = await supabase.from("daily_checkins").insert(checkinData).select().single()
 
-    // Get user's current stats
-    let { data: userStats, error: statsError } = await supabase
-      .from("user_stats")
-      .select("*")
-      .eq("user_id", user.id)
-      .single()
-
-    if (statsError && statsError.code === "PGRST116") {
-      // Create initial stats if they don't exist
-      const { data: newStats, error: createStatsError } = await supabase
-        .from("user_stats")
-        .insert({
-          user_id: user.id,
-          total_points: 0,
-          current_streak: 0,
-          longest_streak: 0,
-          level: 1,
-          total_checkins: 0,
-        })
-        .select()
-        .single()
-
-      if (createStatsError) {
-        console.error("Error creating user stats:", createStatsError)
-        return NextResponse.json({ error: "Failed to create user stats" }, { status: 500 })
-      }
-
-      userStats = newStats
-    } else if (statsError) {
-      console.error("Error fetching user stats:", statsError)
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
-    }
-
-    // Calculate streak
-    let newStreak = 1
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayStr = yesterday.toISOString().split("T")[0]
-
-    if (userStats.last_checkin === yesterdayStr) {
-      newStreak = userStats.current_streak + 1
-    } else if (userStats.last_checkin === today) {
-      newStreak = userStats.current_streak
-    }
-
-    // Calculate points
-    const basePoints = 10
-    const gratitudeBonus = gratitudeNote ? 5 : 0
-    let streakMultiplier = 1
-
-    if (newStreak >= 14) {
-      streakMultiplier = 2.0
-    } else if (newStreak >= 7) {
-      streakMultiplier = 1.5
-    } else if (newStreak >= 3) {
-      streakMultiplier = 1.25
-    }
-
-    const finalPoints = Math.floor((basePoints + gratitudeBonus) * streakMultiplier)
-
-    // Record the check-in
-    const { data: checkin, error: insertError } = await supabase
-      .from("daily_checkins")
-      .insert({
-        user_id: user.id,
-        date: today,
-        mood: mood,
-        mood_label: moodLabel,
-        points: finalPoints,
-        streak: newStreak,
-        gratitude_note: gratitudeNote,
-        is_gratitude_public: isGratitudePublic,
-      })
-      .select()
-      .single()
-
-    if (insertError) {
-      console.error("Error inserting checkin:", insertError)
-      return NextResponse.json({ error: "Failed to record check-in" }, { status: 500 })
-    }
-
-    // If gratitude is public, add to public gratitude feed
-    if (isGratitudePublic && gratitudeNote) {
-      await supabase.from("public_gratitude").insert({
-        user_id: user.id,
-        username: user.username,
-        gratitude: gratitudeNote,
-        mood: moodLabel,
-      })
+    if (error) {
+      console.error("Error inserting check-in:", error)
+      return NextResponse.json({ success: false, error: "Failed to save check-in" }, { status: 500 })
     }
 
     // Update user stats
-    const newTotalPoints = userStats.total_points + finalPoints
-    const newLevel = Math.max(1, Math.floor(newTotalPoints / 100) + 1)
+    const { error: statsError } = await supabase.from("user_stats").upsert({
+      user_id: userId,
+      total_points: supabase.raw("COALESCE(total_points, 0) + ?", [calculatedPoints]),
+      total_checkins: supabase.raw("COALESCE(total_checkins, 0) + 1"),
+      last_checkin: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
 
-    const { error: updateStatsError } = await supabase
-      .from("user_stats")
-      .update({
-        total_points: newTotalPoints,
-        current_streak: newStreak,
-        longest_streak: Math.max(userStats.longest_streak, newStreak),
-        level: newLevel,
-        total_checkins: userStats.total_checkins + 1,
-        last_checkin: today,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", user.id)
-
-    if (updateStatsError) {
-      console.error("Error updating user stats:", updateStatsError)
-      return NextResponse.json({ error: "Failed to update stats" }, { status: 500 })
+    if (statsError) {
+      console.error("Error updating user stats:", statsError)
+      // Don't fail the request if stats update fails
     }
 
     return NextResponse.json({
       success: true,
-      points: finalPoints,
-      streak: newStreak,
-      checkin: checkin,
+      checkin: data,
+      points: calculatedPoints,
     })
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Check-in API error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get("userId")
+    const isPublic = searchParams.get("public") === "true"
+
+    let query = supabase
+      .from("daily_checkins")
+      .select(`
+        *,
+        users!inner(username, avatar)
+      `)
+      .order("created_at", { ascending: false })
+
+    if (userId) {
+      query = query.eq("user_id", userId)
+    }
+
+    if (isPublic) {
+      query = query.eq("is_public", true)
+    }
+
+    const { data, error } = await query.limit(50)
+
+    if (error) {
+      console.error("Error fetching check-ins:", error)
+      return NextResponse.json({ success: false, error: "Failed to fetch check-ins" }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      checkins: data || [],
+    })
+  } catch (error) {
+    console.error("Check-ins GET error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }

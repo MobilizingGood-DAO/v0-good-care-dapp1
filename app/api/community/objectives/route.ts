@@ -1,28 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+import { supabase } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
-    const status = searchParams.get("status") || "all"
 
-    let query = supabase.from("care_objectives").select("*")
+    let query = supabase.from("care_objectives").select("*").order("created_at", { ascending: false })
 
     if (userId) {
       query = query.eq("user_id", userId)
     }
 
-    if (status !== "all") {
-      query = query.eq("status", status)
-    }
-
-    const { data, error } = await query.order("created_at", { ascending: false })
+    const { data, error } = await query
 
     if (error) {
-      throw error
+      console.error("Error fetching objectives:", error)
+      return NextResponse.json({ success: false, error: "Failed to fetch objectives" }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -30,39 +24,48 @@ export async function GET(request: NextRequest) {
       objectives: data || [],
     })
   } catch (error) {
-    console.error("Error fetching objectives:", error)
-    return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
+    console.error("Objectives GET error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, username, walletAddress, objectiveType, title, description, points, category, evidenceUrl } = body
+    const { userId, username, title, description, category } = body
 
-    if (!userId || !username || !title || !points) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    if (!userId || !username || !title || !category) {
+      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
     }
+
+    // Determine points based on category
+    const pointsMap = {
+      mentorship: 100,
+      content: 75,
+      support: 50,
+      events: 125,
+    }
+
+    const points = pointsMap[category as keyof typeof pointsMap] || 50
 
     const { data, error } = await supabase
       .from("care_objectives")
       .insert({
         user_id: userId,
         username,
-        wallet_address: walletAddress,
-        objective_type: objectiveType || "community",
         title,
         description,
+        category,
         points,
-        category: category || "general",
-        evidence_url: evidenceUrl,
-        status: "pending",
+        status: "completed", // Auto-complete for demo
+        completed_at: new Date().toISOString(),
       })
       .select()
       .single()
 
     if (error) {
-      throw error
+      console.error("Error creating objective:", error)
+      return NextResponse.json({ success: false, error: "Failed to create objective" }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
       objective: data,
     })
   } catch (error) {
-    console.error("Error creating objective:", error)
-    return NextResponse.json({ error: "Failed to create objective" }, { status: 500 })
+    console.error("Objectives POST error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }

@@ -1,107 +1,148 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { NextResponse } from "next/server"
+import { supabase } from "@/lib/supabase"
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url)
-    const limit = Number.parseInt(searchParams.get("limit") || "100")
-
-    // Get self-care points from user_stats
-    const { data: userStatsData, error: statsError } = await supabase
-      .from("users")
+    // Get self-care points from daily check-ins
+    const { data: checkinData, error: checkinError } = await supabase
+      .from("daily_checkins")
       .select(`
-        id,
-        username,
-        wallet_address,
-        user_stats (
-          total_points,
-          current_streak,
-          longest_streak,
-          level,
-          total_checkins,
-          last_checkin
-        )
+        user_id,
+        users!inner(username, avatar),
+        points,
+        created_at
       `)
-      .not("user_stats", "is", null)
+      .order("created_at", { ascending: false })
 
-    if (statsError) {
-      console.error("Error fetching user stats:", statsError)
+    if (checkinError) {
+      console.error("Error fetching checkin data:", checkinError)
     }
 
-    // Get community CARE objective points
+    // Get community objective points
     const { data: objectiveData, error: objectiveError } = await supabase
       .from("care_objectives")
-      .select("user_id, username, points, title, category")
+      .select(`
+        user_id,
+        username,
+        points,
+        status
+      `)
       .eq("status", "completed")
 
     if (objectiveError) {
       console.error("Error fetching objective data:", objectiveError)
     }
 
-    // Aggregate objective points by user_id
-    const objectivePointsByUser = new Map<string, { points: number; objectives: any[] }>()
-    if (objectiveData) {
-      objectiveData.forEach((obj: any) => {
-        const current = objectivePointsByUser.get(obj.user_id) || { points: 0, objectives: [] }
-        current.points += obj.points || 0
-        current.objectives.push({
-          title: obj.title,
-          points: obj.points,
-          category: obj.category,
-        })
-        objectivePointsByUser.set(obj.user_id, current)
+    // Aggregate points by user
+    const userStats = new Map()
+
+    // Process self-care points from check-ins
+    if (checkinData) {
+      checkinData.forEach((checkin) => {
+        const userId = checkin.user_id
+        const username = checkin.users?.username || "Anonymous"
+        const avatar = checkin.users?.avatar || ""
+
+        if (!userStats.has(userId)) {
+          userStats.set(userId, {
+            userId,
+            username,
+            avatar,
+            selfCarePoints: 0,
+            objectivePoints: 0,
+            totalPoints: 0,
+            totalCheckins: 0,
+            lastCheckin: null,
+            currentStreak: 0,
+          })
+        }
+
+        const user = userStats.get(userId)
+        user.selfCarePoints += checkin.points || 10
+        user.totalCheckins += 1
+
+        if (!user.lastCheckin || new Date(checkin.created_at) > new Date(user.lastCheckin)) {
+          user.lastCheckin = checkin.created_at
+        }
       })
     }
 
-    // Combine the data
-    const combinedData = (userStatsData || []).map((user: any) => {
-      const selfCarePoints = user.user_stats?.total_points || 0
-      const objectiveData = objectivePointsByUser.get(user.id) || { points: 0, objectives: [] }
-      const careObjectivePoints = objectiveData.points
-      const totalPoints = selfCarePoints + careObjectivePoints
+    // Process community objective points
+    if (objectiveData) {
+      objectiveData.forEach((objective) => {
+        const userId = objective.user_id
+        const username = objective.username
 
-      return {
-        userId: user.id,
-        username: user.username || `User_${user.wallet_address?.slice(-6) || user.id.slice(-6)}`,
-        walletAddress: user.wallet_address,
-        selfCarePoints,
-        careObjectivePoints,
-        totalPoints,
-        currentStreak: user.user_stats?.current_streak || 0,
-        longestStreak: user.user_stats?.longest_streak || 0,
-        level: user.user_stats?.level || 1,
-        totalCheckins: user.user_stats?.total_checkins || 0,
-        lastCheckin: user.user_stats?.last_checkin,
-        objectives: objectiveData.objectives,
-      }
+        if (!userStats.has(userId)) {
+          userStats.set(userId, {
+            userId,
+            username,
+            avatar: "",
+            selfCarePoints: 0,
+            objectivePoints: 0,
+            totalPoints: 0,
+            totalCheckins: 0,
+            lastCheckin: null,
+            currentStreak: 0,
+          })
+        }
+
+        const user = userStats.get(userId)
+        user.objectivePoints += objective.points || 0
+      })
+    }
+
+    // Calculate total points and streaks
+    const leaderboard = Array.from(userStats.values()).map((user) => {
+      user.totalPoints = user.selfCarePoints + user.objectivePoints
+
+      // Calculate current streak (simplified)
+      user.currentStreak = Math.floor(user.totalCheckins / 7) + 1
+
+      return user
     })
 
-    // Sort by total points and add ranks
-    const sortedData = combinedData
-      .sort((a, b) => b.totalPoints - a.totalPoints)
-      .slice(0, limit)
-      .map((entry, index) => ({
-        ...entry,
-        rank: index + 1,
-      }))
+    // Sort by total points descending
+    leaderboard.sort((a, b) => b.totalPoints - a.totalPoints)
+
+    // Add rank
+    leaderboard.forEach((user, index) => {
+      user.rank = index + 1
+    })
 
     // Calculate stats
     const stats = {
-      totalUsers: sortedData.length,
-      totalSelfCarePoints: sortedData.reduce((sum, user) => sum + user.selfCarePoints, 0),
-      totalObjectivePoints: sortedData.reduce((sum, user) => sum + user.careObjectivePoints, 0),
-      totalPoints: sortedData.reduce((sum, user) => sum + user.totalPoints, 0),
+      totalUsers: leaderboard.length,
+      totalSelfCarePoints: leaderboard.reduce((sum, user) => sum + user.selfCarePoints, 0),
+      totalObjectivePoints: leaderboard.reduce((sum, user) => sum + user.objectivePoints, 0),
+      totalPoints: leaderboard.reduce((sum, user) => sum + user.totalPoints, 0),
+      averagePointsPerUser:
+        leaderboard.length > 0
+          ? Math.round(leaderboard.reduce((sum, user) => sum + user.totalPoints, 0) / leaderboard.length)
+          : 0,
     }
 
     return NextResponse.json({
       success: true,
-      leaderboard: sortedData,
+      leaderboard,
       stats,
     })
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Leaderboard API error:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to fetch leaderboard data",
+        leaderboard: [],
+        stats: {
+          totalUsers: 0,
+          totalSelfCarePoints: 0,
+          totalObjectivePoints: 0,
+          totalPoints: 0,
+          averagePointsPerUser: 0,
+        },
+      },
+      { status: 500 },
+    )
   }
 }

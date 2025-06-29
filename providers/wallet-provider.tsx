@@ -5,7 +5,7 @@ import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit"
 import { WagmiProvider } from "wagmi"
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
 import { defineChain } from "viem"
-import { metaMask, walletConnect, coinbaseWallet } from "wagmi/connectors"
+import { metaMask, coinbaseWallet } from "wagmi/connectors"
 
 // Define GOOD CARE Network chain
 const goodCareNetwork = defineChain({
@@ -29,7 +29,7 @@ const goodCareNetwork = defineChain({
   },
 })
 
-// Configure wagmi with specific connectors for mobile
+// Configure wagmi with specific connectors (removed WalletConnect to fix domain error)
 const config = getDefaultConfig({
   appName: "GOOD CARE Network",
   projectId: "96ac3be93570659af072073d3e77c2b6",
@@ -44,15 +44,6 @@ const config = getDefaultConfig({
     coinbaseWallet({
       appName: "GOOD CARE Network",
       appLogoUrl: "https://goodonavax.vercel.app/placeholder-logo.png",
-    }),
-    walletConnect({
-      projectId: "96ac3be93570659af072073d3e77c2b6",
-      metadata: {
-        name: "GOOD CARE Network",
-        description: "Your daily wellness companion",
-        url: "https://goodonavax.vercel.app",
-        icons: ["https://goodonavax.vercel.app/placeholder-logo.png"],
-      },
     }),
   ],
   ssr: true,
