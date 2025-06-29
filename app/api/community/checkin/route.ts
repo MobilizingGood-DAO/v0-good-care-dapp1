@@ -1,70 +1,191 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@supabase/supabase-js"
+
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, mood, moodLabel, gratitudeNote, isGratitudePublic = false, resourcesViewed = [] } = body
+    const { walletAddress, mood, moodLabel, gratitudeNote, isGratitudePublic } = await request.json()
 
-    if (!userId || mood === undefined || !moodLabel) {
+    if (!walletAddress || mood === undefined || !moodLabel) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const today = new Date().toISOString().split("T")[0]
+    // Get or create user
+    let { data: user, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("wallet_address", walletAddress)
+      .single()
 
-    // Check if already checked in today
-    const { data: existingCheckIn } = await supabase
+    if (userError && userError.code === "PGRST116") {
+      // User doesn't exist, create them
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert({
+          wallet_address: walletAddress,
+          username: `User_${walletAddress.slice(-6)}`,
+        })
+        .select()
+        .single()
+
+      if (createError) {
+        console.error("Error creating user:", createError)
+        return NextResponse.json({ error: "Failed to create user" }, { status: 500 })
+      }
+
+      user = newUser
+
+      // Initialize user stats
+      await supabase.from("user_stats").insert({
+        user_id: user.id,
+        total_points: 0,
+        current_streak: 0,
+        longest_streak: 0,
+        level: 1,
+        total_checkins: 0,
+      })
+    } else if (userError) {
+      console.error("Error fetching user:", userError)
+      return NextResponse.json({ error: "Database error" }, { status: 500 })
+    }
+
+    // Check if user already checked in today
+    const today = new Date().toISOString().split("T")[0]
+    const { data: existingCheckin, error: checkinError } = await supabase
       .from("daily_checkins")
-      .select("id")
-      .eq("user_id", userId)
+      .select("*")
+      .eq("user_id", user.id)
       .eq("date", today)
       .single()
 
-    if (existingCheckIn) {
+    if (checkinError && checkinError.code !== "PGRST116") {
+      console.error("Error checking existing checkin:", checkinError)
+      return NextResponse.json({ error: "Database error" }, { status: 500 })
+    }
+
+    if (existingCheckin) {
       return NextResponse.json({ error: "Already checked in today" }, { status: 400 })
     }
 
-    // Get user info
-    const { data: user } = await supabase.from("users").select("username, wallet_address").eq("id", userId).single()
+    // Get user's current stats
+    let { data: userStats, error: statsError } = await supabase
+      .from("user_stats")
+      .select("*")
+      .eq("user_id", user.id)
+      .single()
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    if (statsError && statsError.code === "PGRST116") {
+      // Create initial stats if they don't exist
+      const { data: newStats, error: createStatsError } = await supabase
+        .from("user_stats")
+        .insert({
+          user_id: user.id,
+          total_points: 0,
+          current_streak: 0,
+          longest_streak: 0,
+          level: 1,
+          total_checkins: 0,
+        })
+        .select()
+        .single()
+
+      if (createStatsError) {
+        console.error("Error creating user stats:", createStatsError)
+        return NextResponse.json({ error: "Failed to create user stats" }, { status: 500 })
+      }
+
+      userStats = newStats
+    } else if (statsError) {
+      console.error("Error fetching user stats:", statsError)
+      return NextResponse.json({ error: "Database error" }, { status: 500 })
     }
 
-    // Calculate streak and points (simplified)
+    // Calculate streak
+    let newStreak = 1
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split("T")[0]
+
+    if (userStats.last_checkin === yesterdayStr) {
+      newStreak = userStats.current_streak + 1
+    } else if (userStats.last_checkin === today) {
+      newStreak = userStats.current_streak
+    }
+
+    // Calculate points
     const basePoints = 10
     const gratitudeBonus = gratitudeNote ? 5 : 0
-    const points = basePoints + gratitudeBonus
+    let streakMultiplier = 1
 
-    // Insert check-in
-    const { data: checkIn, error: checkInError } = await supabase
+    if (newStreak >= 14) {
+      streakMultiplier = 2.0
+    } else if (newStreak >= 7) {
+      streakMultiplier = 1.5
+    } else if (newStreak >= 3) {
+      streakMultiplier = 1.25
+    }
+
+    const finalPoints = Math.floor((basePoints + gratitudeBonus) * streakMultiplier)
+
+    // Record the check-in
+    const { data: checkin, error: insertError } = await supabase
       .from("daily_checkins")
       .insert({
-        user_id: userId,
+        user_id: user.id,
         date: today,
-        mood,
+        mood: mood,
         mood_label: moodLabel,
-        points,
-        streak: 1, // Simplified - would calculate actual streak
+        points: finalPoints,
+        streak: newStreak,
         gratitude_note: gratitudeNote,
         is_gratitude_public: isGratitudePublic,
-        resources_viewed: resourcesViewed,
       })
       .select()
       .single()
 
-    if (checkInError) {
-      console.error("Error creating check-in:", checkInError)
+    if (insertError) {
+      console.error("Error inserting checkin:", insertError)
       return NextResponse.json({ error: "Failed to record check-in" }, { status: 500 })
     }
 
-    // Get updated stats
-    const { data: stats } = await supabase.from("user_stats").select("*").eq("user_id", userId).single()
+    // If gratitude is public, add to public gratitude feed
+    if (isGratitudePublic && gratitudeNote) {
+      await supabase.from("public_gratitude").insert({
+        user_id: user.id,
+        username: user.username,
+        gratitude: gratitudeNote,
+        mood: moodLabel,
+      })
+    }
+
+    // Update user stats
+    const newTotalPoints = userStats.total_points + finalPoints
+    const newLevel = Math.max(1, Math.floor(newTotalPoints / 100) + 1)
+
+    const { error: updateStatsError } = await supabase
+      .from("user_stats")
+      .update({
+        total_points: newTotalPoints,
+        current_streak: newStreak,
+        longest_streak: Math.max(userStats.longest_streak, newStreak),
+        level: newLevel,
+        total_checkins: userStats.total_checkins + 1,
+        last_checkin: today,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id)
+
+    if (updateStatsError) {
+      console.error("Error updating user stats:", updateStatsError)
+      return NextResponse.json({ error: "Failed to update stats" }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,
-      checkIn,
-      stats,
+      points: finalPoints,
+      streak: newStreak,
+      checkin: checkin,
     })
   } catch (error) {
     console.error("API Error:", error)

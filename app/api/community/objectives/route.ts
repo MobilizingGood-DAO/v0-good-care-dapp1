@@ -1,27 +1,28 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@supabase/supabase-js"
 
-// GET - Fetch user's care objectives
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
-    const status = searchParams.get("status") || "completed"
+    const status = searchParams.get("status") || "all"
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID required" }, { status: 400 })
+    let query = supabase.from("care_objectives").select("*")
+
+    if (userId) {
+      query = query.eq("user_id", userId)
     }
 
-    const { data, error } = await supabase
-      .from("care_objectives")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("status", status)
-      .order("created_at", { ascending: false })
+    if (status !== "all") {
+      query = query.eq("status", status)
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false })
 
     if (error) {
-      console.error("Error fetching objectives:", error)
-      return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
+      throw error
     }
 
     return NextResponse.json({
@@ -29,18 +30,17 @@ export async function GET(request: NextRequest) {
       objectives: data || [],
     })
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error fetching objectives:", error)
+    return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
   }
 }
 
-// POST - Create new care objective
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, username, walletAddress, objectiveType, title, description, points, evidenceUrl } = body
+    const { userId, username, walletAddress, objectiveType, title, description, points, category, evidenceUrl } = body
 
-    if (!userId || !username || !walletAddress || !objectiveType || !title || !points) {
+    if (!userId || !username || !title || !points) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
@@ -50,19 +50,19 @@ export async function POST(request: NextRequest) {
         user_id: userId,
         username,
         wallet_address: walletAddress,
-        objective_type: objectiveType,
+        objective_type: objectiveType || "community",
         title,
         description,
         points,
+        category: category || "general",
         evidence_url: evidenceUrl,
-        status: "pending", // Requires verification
+        status: "pending",
       })
       .select()
       .single()
 
     if (error) {
-      console.error("Error creating objective:", error)
-      return NextResponse.json({ error: "Failed to create objective" }, { status: 500 })
+      throw error
     }
 
     return NextResponse.json({
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
       objective: data,
     })
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error creating objective:", error)
+    return NextResponse.json({ error: "Failed to create objective" }, { status: 500 })
   }
 }
