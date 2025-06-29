@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ objectives: data || [] })
   } catch (error) {
-    console.error("Error in objectives GET:", error)
+    console.error("Error in objectives GET API:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -42,40 +42,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Validate category
-    const validCategories = ["mentorship", "content", "support", "events"]
-    if (!validCategories.includes(category)) {
-      return NextResponse.json({ error: "Invalid category" }, { status: 400 })
-    }
-
-    // Set default points based on category
-    const defaultPoints = {
+    const pointsMap = {
       mentorship: 100,
       content: 75,
       support: 50,
       events: 125,
     }
 
-    const objectiveData = {
-      user_id: userId,
-      username,
-      title,
-      description: description || "",
-      category,
-      points: points || defaultPoints[category as keyof typeof defaultPoints],
-      status: "active",
-    }
-
-    const { data, error } = await supabase.from("care_objectives").insert([objectiveData]).select().single()
+    const { data, error } = await supabase
+      .from("care_objectives")
+      .insert({
+        user_id: userId,
+        username,
+        title,
+        description: description || "",
+        category,
+        points: points || pointsMap[category as keyof typeof pointsMap] || 50,
+        status: "active",
+      })
+      .select()
+      .single()
 
     if (error) {
       console.error("Error creating objective:", error)
       return NextResponse.json({ error: "Failed to create objective" }, { status: 500 })
     }
 
-    return NextResponse.json({ objective: data }, { status: 201 })
+    return NextResponse.json({ objective: data })
   } catch (error) {
-    console.error("Error in objectives POST:", error)
+    console.error("Error in objectives POST API:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -89,11 +84,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const updateData: any = {
-      status,
-      updated_at: new Date().toISOString(),
-    }
-
+    const updateData: any = { status }
     if (status === "completed" && completedAt) {
       updateData.completed_at = completedAt
     }
@@ -107,7 +98,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ objective: data })
   } catch (error) {
-    console.error("Error in objectives PATCH:", error)
+    console.error("Error in objectives PATCH API:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Heart, Trophy, Users, Target, TrendingUp } from "lucide-react"
+import { Trophy, Heart, Users, Target, TrendingUp } from "lucide-react"
 
 interface LeaderboardUser {
   username: string
@@ -14,7 +14,6 @@ interface LeaderboardUser {
   streak: number
   checkins: number
   objectives: number
-  recentDays: boolean[]
 }
 
 interface LeaderboardStats {
@@ -22,13 +21,11 @@ interface LeaderboardStats {
   totalSelfCarePoints: number
   totalObjectivePoints: number
   totalPoints: number
-  averageStreak: number
 }
 
 interface LeaderboardData {
   leaderboard: LeaderboardUser[]
   stats: LeaderboardStats
-  lastUpdated: string
 }
 
 export default function RealLeaderboard() {
@@ -38,10 +35,13 @@ export default function RealLeaderboard() {
 
   const fetchLeaderboard = async () => {
     try {
+      setLoading(true)
       const response = await fetch("/api/community/leaderboard")
+
       if (!response.ok) {
         throw new Error("Failed to fetch leaderboard")
       }
+
       const result = await response.json()
       setData(result)
       setError(null)
@@ -60,24 +60,48 @@ export default function RealLeaderboard() {
     return () => clearInterval(interval)
   }, [])
 
+  const getRankIcon = (index: number) => {
+    if (index === 0) return <Trophy className="h-5 w-5 text-yellow-500" />
+    if (index === 1) return <Trophy className="h-5 w-5 text-gray-400" />
+    if (index === 2) return <Trophy className="h-5 w-5 text-amber-600" />
+    return <span className="text-sm font-medium text-muted-foreground">#{index + 1}</span>
+  }
+
+  const getStreakDots = (streak: number) => {
+    const dots = []
+    const maxDots = 7
+    const activeDots = Math.min(streak, maxDots)
+
+    for (let i = 0; i < maxDots; i++) {
+      dots.push(<div key={i} className={`w-2 h-2 rounded-full ${i < activeDots ? "bg-green-500" : "bg-gray-200"}`} />)
+    }
+    return dots
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
             <Card key={i} className="animate-pulse">
               <CardContent className="p-4">
                 <div className="h-4 bg-gray-200 rounded mb-2"></div>
-                <div className="h-8 bg-gray-200 rounded"></div>
+                <div className="h-6 bg-gray-200 rounded"></div>
               </CardContent>
             </Card>
           ))}
         </div>
         <Card className="animate-pulse">
-          <CardContent className="p-4">
-            <div className="space-y-3">
+          <CardContent className="p-6">
+            <div className="space-y-4">
               {[...Array(5)].map((_, i) => (
-                <div key={i} className="h-16 bg-gray-200 rounded"></div>
+                <div key={i} className="flex items-center space-x-4">
+                  <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+                  <div className="flex-1">
+                    <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                    <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                  </div>
+                </div>
               ))}
             </div>
           </CardContent>
@@ -103,7 +127,7 @@ export default function RealLeaderboard() {
     return (
       <Card>
         <CardContent className="p-6 text-center">
-          <p className="text-gray-500">No leaderboard data available</p>
+          <p className="text-muted-foreground">No leaderboard data available</p>
         </CardContent>
       </Card>
     )
@@ -112,51 +136,51 @@ export default function RealLeaderboard() {
   return (
     <div className="space-y-6">
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Users className="h-5 w-5 text-blue-600" />
               <div>
                 <p className="text-sm font-medium text-blue-600">Total Users</p>
-                <p className="text-2xl font-bold text-blue-900">{data.stats.totalUsers}</p>
+                <p className="text-2xl font-bold text-blue-700">{data.stats.totalUsers}</p>
               </div>
-              <Users className="h-8 w-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Heart className="h-5 w-5 text-green-600" />
               <div>
-                <p className="text-sm font-medium text-green-600">Self-CARE Points</p>
-                <p className="text-2xl font-bold text-green-900">{data.stats.totalSelfCarePoints.toLocaleString()}</p>
+                <p className="text-sm font-medium text-green-600">Self-CARE</p>
+                <p className="text-2xl font-bold text-green-700">{data.stats.totalSelfCarePoints}</p>
               </div>
-              <Heart className="h-8 w-8 text-green-500" />
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Target className="h-5 w-5 text-purple-600" />
               <div>
-                <p className="text-sm font-medium text-purple-600">Community Points</p>
-                <p className="text-2xl font-bold text-purple-900">{data.stats.totalObjectivePoints.toLocaleString()}</p>
+                <p className="text-sm font-medium text-purple-600">Community</p>
+                <p className="text-2xl font-bold text-purple-700">{data.stats.totalObjectivePoints}</p>
               </div>
-              <Target className="h-8 w-8 text-purple-500" />
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-5 w-5 text-orange-600" />
               <div>
                 <p className="text-sm font-medium text-orange-600">Total Points</p>
-                <p className="text-2xl font-bold text-orange-900">{data.stats.totalPoints.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-orange-700">{data.stats.totalPoints}</p>
               </div>
-              <TrendingUp className="h-8 w-8 text-orange-500" />
             </div>
           </CardContent>
         </Card>
@@ -165,13 +189,11 @@ export default function RealLeaderboard() {
       {/* Leaderboard */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="h-5 w-5 text-yellow-500" />
-            Community Leaderboard
+          <CardTitle className="flex items-center space-x-2">
+            <Trophy className="h-5 w-5" />
+            <span>Community Leaderboard</span>
           </CardTitle>
-          <CardDescription>
-            Showing Self-CARE points (daily check-ins) + Community CARE points (objectives)
-          </CardDescription>
+          <CardDescription>Ranking based on Self-CARE points and Community objectives</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -179,38 +201,11 @@ export default function RealLeaderboard() {
               <div
                 key={user.username}
                 className={`flex items-center justify-between p-4 rounded-lg border ${
-                  index === 0
-                    ? "bg-gradient-to-r from-yellow-50 to-yellow-100 border-yellow-200"
-                    : index === 1
-                      ? "bg-gradient-to-r from-gray-50 to-gray-100 border-gray-200"
-                      : index === 2
-                        ? "bg-gradient-to-r from-orange-50 to-orange-100 border-orange-200"
-                        : "bg-gray-50 border-gray-200"
+                  index < 3 ? "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200" : "bg-gray-50"
                 }`}
               >
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-lg font-bold ${
-                        index === 0
-                          ? "text-yellow-600"
-                          : index === 1
-                            ? "text-gray-600"
-                            : index === 2
-                              ? "text-orange-600"
-                              : "text-gray-500"
-                      }`}
-                    >
-                      #{index + 1}
-                    </span>
-                    {index < 3 && (
-                      <Trophy
-                        className={`h-4 w-4 ${
-                          index === 0 ? "text-yellow-500" : index === 1 ? "text-gray-500" : "text-orange-500"
-                        }`}
-                      />
-                    )}
-                  </div>
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center justify-center w-8 h-8">{getRankIcon(index)}</div>
 
                   <Avatar>
                     <AvatarFallback className="bg-blue-100 text-blue-600">
@@ -219,40 +214,27 @@ export default function RealLeaderboard() {
                   </Avatar>
 
                   <div>
-                    <p className="font-semibold">{user.username}</p>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <span>🔥 {user.streak} day streak</span>
-                      <span>•</span>
-                      <span>{user.checkins} check-ins</span>
-                      <span>•</span>
-                      <span>{user.objectives} objectives</span>
+                    <p className="font-medium">{user.username}</p>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <div className="flex space-x-1">{getStreakDots(user.streak)}</div>
+                      <span className="text-xs text-muted-foreground">{user.streak} day streak</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  {/* Recent Activity Dots */}
-                  <div className="flex gap-1">
-                    {user.recentDays.map((active, dayIndex) => (
-                      <div
-                        key={dayIndex}
-                        className={`w-2 h-2 rounded-full ${active ? "bg-green-500" : "bg-gray-200"}`}
-                        title={`${7 - dayIndex} days ago`}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Points Breakdown */}
+                <div className="flex items-center space-x-4">
                   <div className="text-right">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className="text-green-600 border-green-200">
-                        Self: {user.selfCarePoints}
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Badge variant="secondary" className="bg-green-100 text-green-700">
+                        <Heart className="h-3 w-3 mr-1" />
+                        {user.selfCarePoints}
                       </Badge>
-                      <Badge variant="outline" className="text-purple-600 border-purple-200">
-                        Community: {user.objectivePoints}
+                      <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                        <Target className="h-3 w-3 mr-1" />
+                        {user.objectivePoints}
                       </Badge>
                     </div>
-                    <p className="text-lg font-bold text-blue-600">{user.totalPoints} pts</p>
+                    <p className="text-sm font-bold">Total: {user.totalPoints} pts</p>
                   </div>
                 </div>
               </div>
@@ -260,15 +242,12 @@ export default function RealLeaderboard() {
           </div>
 
           {data.leaderboard.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              <Heart className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-              <p>No community members yet. Be the first to check in!</p>
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No users found. Be the first to check in!</p>
             </div>
           )}
         </CardContent>
       </Card>
-
-      <p className="text-xs text-gray-500 text-center">Last updated: {new Date(data.lastUpdated).toLocaleString()}</p>
     </div>
   )
 }

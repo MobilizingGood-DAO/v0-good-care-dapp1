@@ -1,6 +1,6 @@
 "use client"
 
-import { WagmiProvider } from "wagmi"
+import { WagmiProvider, createConfig, http } from "wagmi"
 import { mainnet, sepolia } from "wagmi/chains"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ConnectKitProvider, getDefaultConfig } from "connectkit"
@@ -19,29 +19,30 @@ const goodCareSubnet = {
     default: {
       http: [process.env.NEXT_PUBLIC_GOODCARE_RPC || "https://subnets.avax.network/goodcare/mainnet/rpc"],
     },
-    public: {
-      http: [process.env.NEXT_PUBLIC_GOODCARE_RPC || "https://subnets.avax.network/goodcare/mainnet/rpc"],
-    },
   },
   blockExplorers: {
-    default: { name: "GOOD Explorer", url: "https://subnets.avax.network/goodcare" },
+    default: {
+      name: "GOOD CARE Explorer",
+      url: "https://subnets.avax.network/goodcare",
+    },
   },
-  testnet: false,
 } as const
 
-const config = getDefaultConfig({
-  // Your dApps chains
-  chains: [goodCareSubnet, mainnet, sepolia],
-
-  // Required API Keys
-  walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "",
-
-  // Required App Info
-  appName: "GOOD CARE DApp",
-  appDescription: "Your GOOD Passport to a kinder, regenerative crypto experience",
-  appUrl: "https://goodcare.network",
-  appIcon: "https://goodcare.network/logo.png",
-})
+const config = createConfig(
+  getDefaultConfig({
+    chains: [goodCareSubnet, mainnet, sepolia],
+    transports: {
+      [goodCareSubnet.id]: http(process.env.NEXT_PUBLIC_GOODCARE_RPC),
+      [mainnet.id]: http(),
+      [sepolia.id]: http(),
+    },
+    walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "",
+    appName: "GOOD CARE DApp",
+    appDescription: "Your GOOD Passport - A living reflection of care, contributions, and healing",
+    appUrl: "https://goodcare.network",
+    appIcon: "https://goodcare.network/icon.png",
+  }),
+)
 
 const queryClient = new QueryClient()
 
@@ -56,15 +57,10 @@ export default function WalletProvider({ children }: WalletProviderProps) {
         <ConnectKitProvider
           theme="auto"
           mode="light"
-          options={{
-            initialChainId: goodCareSubnet.id,
-            enforceSupportedChains: false,
-            disclaimer: (
-              <div style={{ padding: "16px", textAlign: "center" }}>
-                <p style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>Welcome to GOOD CARE Network</p>
-                <p style={{ fontSize: "12px", color: "#888" }}>Your embedded wallet for a kinder crypto experience</p>
-              </div>
-            ),
+          customTheme={{
+            "--ck-accent-color": "#10b981",
+            "--ck-accent-text-color": "#ffffff",
+            "--ck-border-radius": "8px",
           }}
         >
           {children}

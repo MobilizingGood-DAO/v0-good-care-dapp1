@@ -8,7 +8,8 @@ export async function GET() {
     // Get self-care points from daily_checkins
     const { data: checkinData, error: checkinError } = await supabase
       .from("daily_checkins")
-      .select("user_id, username, mood, gratitude, streak, created_at")
+      .select("user_id, username, streak, created_at")
+      .order("created_at", { ascending: false })
 
     if (checkinError) {
       console.error("Error fetching checkin data:", checkinError)
@@ -18,7 +19,7 @@ export async function GET() {
     // Get community objective points
     const { data: objectiveData, error: objectiveError } = await supabase
       .from("care_objectives")
-      .select("user_id, username, points, status, category")
+      .select("user_id, username, points, status")
       .eq("status", "completed")
 
     if (objectiveError) {
@@ -30,37 +31,41 @@ export async function GET() {
     const selfCarePoints = new Map<string, { username: string; points: number; streak: number; checkins: number }>()
 
     checkinData?.forEach((checkin) => {
-      const userId = checkin.user_id
-      const existing = selfCarePoints.get(userId) || { username: checkin.username, points: 0, streak: 0, checkins: 0 }
-
-      // Base points: 10 for checkin + 5 for gratitude + streak bonus
-      let points = 10
-      if (checkin.gratitude && checkin.gratitude.trim().length > 0) {
-        points += 5
+      const userId = checkin.user_id || checkin.username
+      if (!selfCarePoints.has(userId)) {
+        selfCarePoints.set(userId, {
+          username: checkin.username,
+          points: 0,
+          streak: checkin.streak || 0,
+          checkins: 0,
+        })
       }
 
-      // Streak bonus (1 point per streak day, max 20)
-      const streakBonus = Math.min(checkin.streak || 0, 20)
-      points += streakBonus
-
-      existing.points += points
-      existing.streak = Math.max(existing.streak, checkin.streak || 0)
-      existing.checkins += 1
-
-      selfCarePoints.set(userId, existing)
+      const user = selfCarePoints.get(userId)!
+      // Base points: 10 per check-in + 5 for gratitude + streak bonus
+      const basePoints = 15 // 10 base + 5 gratitude
+      const streakBonus = Math.min(checkin.streak || 0, 10) // Max 10 bonus points
+      user.points += basePoints + streakBonus
+      user.checkins += 1
+      user.streak = Math.max(user.streak, checkin.streak || 0)
     })
 
     // Calculate community objective points per user
     const objectivePoints = new Map<string, { username: string; points: number; objectives: number }>()
 
     objectiveData?.forEach((objective) => {
-      const userId = objective.user_id
-      const existing = objectivePoints.get(userId) || { username: objective.username, points: 0, objectives: 0 }
+      const userId = objective.user_id || objective.username
+      if (!objectivePoints.has(userId)) {
+        objectivePoints.set(userId, {
+          username: objective.username,
+          points: 0,
+          objectives: 0,
+        })
+      }
 
-      existing.points += objective.points
-      existing.objectives += 1
-
-      objectivePoints.set(userId, existing)
+      const user = objectivePoints.get(userId)!
+      user.points += objective.points
+      user.objectives += 1
     })
 
     // Merge and create leaderboard
@@ -74,7 +79,6 @@ export async function GET() {
         streak: number
         checkins: number
         objectives: number
-        recentDays: boolean[]
       }
     >()
 
@@ -88,17 +92,16 @@ export async function GET() {
         streak: data.streak,
         checkins: data.checkins,
         objectives: 0,
-        recentDays: generateRecentDays(data.streak),
       })
     })
 
     // Add objective points
     objectivePoints.forEach((data, userId) => {
-      const existing = leaderboard.get(userId)
-      if (existing) {
-        existing.objectivePoints = data.points
-        existing.totalPoints += data.points
-        existing.objectives = data.objectives
+      if (leaderboard.has(userId)) {
+        const user = leaderboard.get(userId)!
+        user.objectivePoints = data.points
+        user.totalPoints += data.points
+        user.objectives = data.objectives
       } else {
         leaderboard.set(userId, {
           username: data.username,
@@ -108,7 +111,6 @@ export async function GET() {
           streak: 0,
           checkins: 0,
           objectives: data.objectives,
-          recentDays: [],
         })
       }
     })
@@ -119,33 +121,22 @@ export async function GET() {
       .slice(0, 50) // Top 50 users
 
     // Calculate stats
-    const stats = {
-      totalUsers: leaderboard.size,
-      totalSelfCarePoints: Array.from(selfCarePoints.values()).reduce((sum, user) => sum + user.points, 0),
-      totalObjectivePoints: Array.from(objectivePoints.values()).reduce((sum, user) => sum + user.points, 0),
-      totalPoints: sortedLeaderboard.reduce((sum, user) => sum + user.totalPoints, 0),
-      averageStreak:
-        selfCarePoints.size > 0
-          ? Array.from(selfCarePoints.values()).reduce((sum, user) => sum + user.streak, 0) / selfCarePoints.size
-          : 0,
-    }
+    const totalUsers = leaderboard.size
+    const totalSelfCarePoints = Array.from(leaderboard.values()).reduce((sum, user) => sum + user.selfCarePoints, 0)
+    const totalObjectivePoints = Array.from(leaderboard.values()).reduce((sum, user) => sum + user.objectivePoints, 0)
+    const totalPoints = totalSelfCarePoints + totalObjectivePoints
 
     return NextResponse.json({
       leaderboard: sortedLeaderboard,
-      stats,
-      lastUpdated: new Date().toISOString(),
+      stats: {
+        totalUsers,
+        totalSelfCarePoints,
+        totalObjectivePoints,
+        totalPoints,
+      },
     })
   } catch (error) {
     console.error("Error in leaderboard API:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
-}
-
-function generateRecentDays(streak: number): boolean[] {
-  const days = new Array(7).fill(false)
-  const activeDays = Math.min(streak, 7)
-  for (let i = 0; i < activeDays; i++) {
-    days[6 - i] = true // Fill from the end (most recent)
-  }
-  return days
 }
