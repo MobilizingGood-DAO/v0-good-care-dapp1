@@ -1,234 +1,280 @@
 interface User {
-  id: string
   username: string
-  email?: string
   selfCarePoints: number
-  objectivePoints: number
+  communityPoints: number
   totalPoints: number
   streak: number
-  lastCheckin?: string
   checkins: number
-  objectives: number
+  lastCheckin: string
+  level: number
+  rank: number
+}
+
+interface CommunityStats {
+  totalUsers: number
+  totalSelfCarePoints: number
+  totalCommunityPoints: number
+  totalPoints: number
+  averagePointsPerUser: number
+}
+
+interface LeaderboardData {
+  leaderboard: User[]
+  stats: CommunityStats
+  success: boolean
 }
 
 interface CheckinData {
-  userId: string
   username: string
   mood: string
   gratitude: string
   isPublic?: boolean
-  timestamp: string
 }
 
 interface ObjectiveData {
-  userId: string
   username: string
   title: string
   description: string
-  category: string
-  points: number
-}
-
-interface LeaderboardStats {
-  totalUsers: number
-  totalSelfCarePoints: number
-  totalObjectivePoints: number
-  totalPoints: number
+  category: "mentorship" | "content" | "support" | "events"
 }
 
 class HybridCommunityService {
+  private syncQueue: Array<{ type: string; data: any; timestamp: number }> = []
   private isOnline = true
-  private syncQueue: Array<{ type: string; data: any }> = []
+  private syncInProgress = false
 
   constructor() {
     if (typeof window !== "undefined") {
-      this.isOnline = navigator.onLine
+      // Monitor online status
       window.addEventListener("online", () => {
         this.isOnline = true
         this.processSyncQueue()
       })
+
       window.addEventListener("offline", () => {
         this.isOnline = false
       })
+
+      // Load sync queue from localStorage
+      this.loadSyncQueue()
     }
   }
 
-  async getLeaderboard(): Promise<{ leaderboard: User[]; stats: LeaderboardStats }> {
-    if (this.isOnline) {
-      try {
-        const response = await fetch("/api/community/leaderboard")
-        if (response.ok) {
-          const data = await response.json()
-          // Cache the data locally
-          if (typeof window !== "undefined") {
-            localStorage.setItem("leaderboard_cache", JSON.stringify(data))
-            localStorage.setItem("leaderboard_cache_time", Date.now().toString())
-          }
-          return data
-        }
-      } catch (error) {
-        console.error("Error fetching online leaderboard:", error)
+  private loadSyncQueue() {
+    try {
+      const stored = localStorage.getItem("community_sync_queue")
+      if (stored) {
+        this.syncQueue = JSON.parse(stored)
       }
+    } catch (error) {
+      console.error("Error loading sync queue:", error)
+      this.syncQueue = []
     }
-
-    // Fallback to cached data
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("leaderboard_cache")
-      const cacheTime = localStorage.getItem("leaderboard_cache_time")
-
-      if (cached && cacheTime) {
-        const age = Date.now() - Number.parseInt(cacheTime)
-        if (age < 5 * 60 * 1000) {
-          // 5 minutes
-          return JSON.parse(cached)
-        }
-      }
-    }
-
-    // Return demo data if no cache
-    return this.getDemoLeaderboard()
   }
 
-  async submitCheckin(data: CheckinData): Promise<boolean> {
-    if (this.isOnline) {
-      try {
-        const response = await fetch("/api/community/checkin", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        })
-
-        if (response.ok) {
-          return true
-        }
-      } catch (error) {
-        console.error("Error submitting online checkin:", error)
-      }
+  private saveSyncQueue() {
+    try {
+      localStorage.setItem("community_sync_queue", JSON.stringify(this.syncQueue))
+    } catch (error) {
+      console.error("Error saving sync queue:", error)
     }
-
-    // Queue for later sync
-    this.syncQueue.push({ type: "checkin", data })
-    this.saveToLocalStorage("checkin", data)
-    return true
   }
 
-  async submitObjective(data: ObjectiveData): Promise<boolean> {
-    if (this.isOnline) {
-      try {
-        const response = await fetch("/api/community/objectives", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        })
-
-        if (response.ok) {
-          return true
-        }
-      } catch (error) {
-        console.error("Error submitting online objective:", error)
-      }
-    }
-
-    // Queue for later sync
-    this.syncQueue.push({ type: "objective", data })
-    this.saveToLocalStorage("objective", data)
-    return true
-  }
-
-  async getUserObjectives(userId: string): Promise<any[]> {
-    if (this.isOnline) {
-      try {
-        const response = await fetch(`/api/community/objectives?userId=${userId}`)
-        if (response.ok) {
-          const data = await response.json()
-          return data.objectives || []
-        }
-      } catch (error) {
-        console.error("Error fetching user objectives:", error)
-      }
-    }
-
-    // Return local objectives
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(`objectives_${userId}`)
-      return stored ? JSON.parse(stored) : []
-    }
-
-    return []
+  private addToSyncQueue(type: string, data: any) {
+    this.syncQueue.push({
+      type,
+      data,
+      timestamp: Date.now(),
+    })
+    this.saveSyncQueue()
   }
 
   private async processSyncQueue() {
-    if (!this.isOnline || this.syncQueue.length === 0) return
+    if (this.syncInProgress || !this.isOnline || this.syncQueue.length === 0) {
+      return
+    }
 
-    const queue = [...this.syncQueue]
-    this.syncQueue = []
+    this.syncInProgress = true
 
-    for (const item of queue) {
-      try {
-        if (item.type === "checkin") {
-          await this.submitCheckin(item.data)
-        } else if (item.type === "objective") {
-          await this.submitObjective(item.data)
+    try {
+      const processedItems: number[] = []
+
+      for (let i = 0; i < this.syncQueue.length; i++) {
+        const item = this.syncQueue[i]
+
+        try {
+          if (item.type === "checkin") {
+            await this.submitCheckinOnline(item.data)
+          } else if (item.type === "objective") {
+            await this.submitObjectiveOnline(item.data)
+          }
+
+          processedItems.push(i)
+        } catch (error) {
+          console.error(`Failed to sync ${item.type}:`, error)
+          // Keep failed items in queue for retry
         }
+      }
+
+      // Remove successfully processed items
+      this.syncQueue = this.syncQueue.filter((_, index) => !processedItems.includes(index))
+      this.saveSyncQueue()
+    } catch (error) {
+      console.error("Error processing sync queue:", error)
+    } finally {
+      this.syncInProgress = false
+    }
+  }
+
+  async getLeaderboard(): Promise<LeaderboardData> {
+    if (this.isOnline) {
+      try {
+        const response = await fetch("/api/community/leaderboard")
+        if (!response.ok) {
+          throw new Error("Failed to fetch leaderboard")
+        }
+        const data = await response.json()
+
+        // Cache the data locally
+        localStorage.setItem(
+          "cached_leaderboard",
+          JSON.stringify({
+            data,
+            timestamp: Date.now(),
+          }),
+        )
+
+        return data
       } catch (error) {
-        console.error("Error syncing item:", error)
-        // Re-queue failed items
-        this.syncQueue.push(item)
+        console.error("Error fetching online leaderboard:", error)
+        return this.getCachedLeaderboard()
+      }
+    } else {
+      return this.getCachedLeaderboard()
+    }
+  }
+
+  private getCachedLeaderboard(): LeaderboardData {
+    try {
+      const cached = localStorage.getItem("cached_leaderboard")
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached)
+        // Use cached data if it's less than 5 minutes old
+        if (Date.now() - timestamp < 5 * 60 * 1000) {
+          return data
+        }
+      }
+    } catch (error) {
+      console.error("Error loading cached leaderboard:", error)
+    }
+
+    // Return default empty leaderboard
+    return {
+      leaderboard: [],
+      stats: {
+        totalUsers: 0,
+        totalSelfCarePoints: 0,
+        totalCommunityPoints: 0,
+        totalPoints: 0,
+        averagePointsPerUser: 0,
+      },
+      success: false,
+    }
+  }
+
+  async submitCheckin(data: CheckinData): Promise<{ success: boolean; message: string }> {
+    if (this.isOnline) {
+      try {
+        return await this.submitCheckinOnline(data)
+      } catch (error) {
+        console.error("Online checkin failed, queuing for later:", error)
+        this.addToSyncQueue("checkin", data)
+        return {
+          success: true,
+          message: "Check-in saved offline. Will sync when online.",
+        }
+      }
+    } else {
+      this.addToSyncQueue("checkin", data)
+      return {
+        success: true,
+        message: "Check-in saved offline. Will sync when online.",
       }
     }
   }
 
-  private saveToLocalStorage(type: string, data: any) {
-    if (typeof window === "undefined") return
-
-    const key = `${type}_queue`
-    const existing = JSON.parse(localStorage.getItem(key) || "[]")
-    existing.push({ ...data, timestamp: Date.now() })
-    localStorage.setItem(key, JSON.stringify(existing))
-  }
-
-  private getDemoLeaderboard(): { leaderboard: User[]; stats: LeaderboardStats } {
-    const demoUsers: User[] = [
-      {
-        id: "1",
-        username: "alice_care",
-        selfCarePoints: 245,
-        objectivePoints: 175,
-        totalPoints: 420,
-        streak: 12,
-        checkins: 15,
-        objectives: 2,
+  private async submitCheckinOnline(data: CheckinData): Promise<{ success: boolean; message: string }> {
+    const response = await fetch("/api/community/checkin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-      {
-        id: "2",
-        username: "bob_wellness",
-        selfCarePoints: 180,
-        objectivePoints: 150,
-        totalPoints: 330,
-        streak: 8,
-        checkins: 12,
-        objectives: 2,
-      },
-      {
-        id: "3",
-        username: "carol_support",
-        selfCarePoints: 165,
-        objectivePoints: 100,
-        totalPoints: 265,
-        streak: 6,
-        checkins: 11,
-        objectives: 1,
-      },
-    ]
+      body: JSON.stringify(data),
+    })
 
-    const stats: LeaderboardStats = {
-      totalUsers: demoUsers.length,
-      totalSelfCarePoints: demoUsers.reduce((sum, user) => sum + user.selfCarePoints, 0),
-      totalObjectivePoints: demoUsers.reduce((sum, user) => sum + user.objectivePoints, 0),
-      totalPoints: demoUsers.reduce((sum, user) => sum + user.totalPoints, 0),
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || "Failed to submit check-in")
     }
 
-    return { leaderboard: demoUsers, stats }
+    const result = await response.json()
+    return result
+  }
+
+  async submitObjective(data: ObjectiveData): Promise<{ success: boolean; message: string }> {
+    if (this.isOnline) {
+      try {
+        return await this.submitObjectiveOnline(data)
+      } catch (error) {
+        console.error("Online objective submission failed, queuing for later:", error)
+        this.addToSyncQueue("objective", data)
+        return {
+          success: true,
+          message: "Objective saved offline. Will sync when online.",
+        }
+      }
+    } else {
+      this.addToSyncQueue("objective", data)
+      return {
+        success: true,
+        message: "Objective saved offline. Will sync when online.",
+      }
+    }
+  }
+
+  private async submitObjectiveOnline(data: ObjectiveData): Promise<{ success: boolean; message: string }> {
+    const response = await fetch("/api/community/objectives", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || "Failed to submit objective")
+    }
+
+    const result = await response.json()
+    return result
+  }
+
+  async getUserObjectives(username: string) {
+    if (this.isOnline) {
+      try {
+        const response = await fetch(`/api/community/objectives?username=${encodeURIComponent(username)}`)
+        if (!response.ok) {
+          throw new Error("Failed to fetch objectives")
+        }
+        return await response.json()
+      } catch (error) {
+        console.error("Error fetching user objectives:", error)
+        return { objectives: [], success: false }
+      }
+    } else {
+      return { objectives: [], success: false }
+    }
   }
 
   getSyncQueueLength(): number {
@@ -238,6 +284,14 @@ class HybridCommunityService {
   isOffline(): boolean {
     return !this.isOnline
   }
+
+  async forcSync(): Promise<void> {
+    if (this.isOnline) {
+      await this.processSyncQueue()
+    }
+  }
 }
 
+// Export singleton instance
 export const hybridCommunityService = new HybridCommunityService()
+export default hybridCommunityService

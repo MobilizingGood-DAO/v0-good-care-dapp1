@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Trophy, Heart, Users, Target, TrendingUp } from "lucide-react"
@@ -9,23 +9,27 @@ import { Trophy, Heart, Users, Target, TrendingUp } from "lucide-react"
 interface LeaderboardUser {
   username: string
   selfCarePoints: number
-  objectivePoints: number
+  communityPoints: number
   totalPoints: number
   streak: number
   checkins: number
-  objectives: number
+  lastCheckin: string
+  level: number
+  rank: number
 }
 
 interface LeaderboardStats {
   totalUsers: number
   totalSelfCarePoints: number
-  totalObjectivePoints: number
+  totalCommunityPoints: number
   totalPoints: number
+  averagePointsPerUser: number
 }
 
 interface LeaderboardData {
   leaderboard: LeaderboardUser[]
   stats: LeaderboardStats
+  success: boolean
 }
 
 export default function RealLeaderboard() {
@@ -37,17 +41,17 @@ export default function RealLeaderboard() {
     try {
       setLoading(true)
       const response = await fetch("/api/community/leaderboard")
+      const result = await response.json()
 
       if (!response.ok) {
-        throw new Error("Failed to fetch leaderboard")
+        throw new Error(result.error || "Failed to fetch leaderboard")
       }
 
-      const result = await response.json()
       setData(result)
       setError(null)
     } catch (err) {
       console.error("Error fetching leaderboard:", err)
-      setError("Failed to load leaderboard")
+      setError(err instanceof Error ? err.message : "Failed to load leaderboard")
     } finally {
       setLoading(false)
     }
@@ -60,11 +64,17 @@ export default function RealLeaderboard() {
     return () => clearInterval(interval)
   }, [])
 
-  const getRankIcon = (index: number) => {
-    if (index === 0) return <Trophy className="h-5 w-5 text-yellow-500" />
-    if (index === 1) return <Trophy className="h-5 w-5 text-gray-400" />
-    if (index === 2) return <Trophy className="h-5 w-5 text-amber-600" />
-    return <span className="text-sm font-medium text-muted-foreground">#{index + 1}</span>
+  const getRankIcon = (rank: number) => {
+    switch (rank) {
+      case 1:
+        return <Trophy className="h-5 w-5 text-yellow-500" />
+      case 2:
+        return <Trophy className="h-5 w-5 text-gray-400" />
+      case 3:
+        return <Trophy className="h-5 w-5 text-amber-600" />
+      default:
+        return <span className="text-sm font-medium text-muted-foreground">#{rank}</span>
+    }
   }
 
   const getStreakDots = (streak: number) => {
@@ -155,7 +165,7 @@ export default function RealLeaderboard() {
               <Heart className="h-5 w-5 text-green-600" />
               <div>
                 <p className="text-sm font-medium text-green-600">Self-CARE</p>
-                <p className="text-2xl font-bold text-green-700">{data.stats.totalSelfCarePoints}</p>
+                <p className="text-2xl font-bold text-green-700">{data.stats.totalSelfCarePoints.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -167,7 +177,7 @@ export default function RealLeaderboard() {
               <Target className="h-5 w-5 text-purple-600" />
               <div>
                 <p className="text-sm font-medium text-purple-600">Community</p>
-                <p className="text-2xl font-bold text-purple-700">{data.stats.totalObjectivePoints}</p>
+                <p className="text-2xl font-bold text-purple-700">{data.stats.totalCommunityPoints.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -179,7 +189,7 @@ export default function RealLeaderboard() {
               <TrendingUp className="h-5 w-5 text-orange-600" />
               <div>
                 <p className="text-sm font-medium text-orange-600">Total Points</p>
-                <p className="text-2xl font-bold text-orange-700">{data.stats.totalPoints}</p>
+                <p className="text-2xl font-bold text-orange-700">{data.stats.totalPoints.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -190,52 +200,61 @@ export default function RealLeaderboard() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
-            <Trophy className="h-5 w-5" />
+            <Trophy className="h-5 w-5 text-yellow-500" />
             <span>Community Leaderboard</span>
           </CardTitle>
-          <CardDescription>Ranking based on Self-CARE points and Community objectives</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {data.leaderboard.map((user, index) => (
+            {data.leaderboard.map((user) => (
               <div
                 key={user.username}
                 className={`flex items-center justify-between p-4 rounded-lg border ${
-                  index < 3 ? "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200" : "bg-gray-50"
+                  user.rank <= 3
+                    ? "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200"
+                    : "bg-gray-50 border-gray-200"
                 }`}
               >
                 <div className="flex items-center space-x-4">
-                  <div className="flex items-center justify-center w-8 h-8">{getRankIcon(index)}</div>
+                  <div className="flex items-center justify-center w-10 h-10">{getRankIcon(user.rank)}</div>
 
-                  <Avatar>
+                  <Avatar className="h-10 w-10">
                     <AvatarFallback className="bg-blue-100 text-blue-600">
                       {user.username.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
 
-                  <div>
-                    <p className="font-medium">{user.username}</p>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <div className="flex space-x-1">{getStreakDots(user.streak)}</div>
-                      <span className="text-xs text-muted-foreground">{user.streak} day streak</span>
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <h3 className="font-semibold">{user.username}</h3>
+                      <Badge variant="outline" className="text-xs">
+                        Level {user.level}
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center space-x-4 mt-1">
+                      <div className="flex items-center space-x-1">
+                        <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">
+                          <Heart className="h-3 w-3 mr-1" />
+                          {user.selfCarePoints}
+                        </Badge>
+                        <Badge variant="secondary" className="bg-purple-100 text-purple-700 text-xs">
+                          <Target className="h-3 w-3 mr-1" />
+                          {user.communityPoints}
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-center space-x-1">
+                        {getStreakDots(user.streak)}
+                        <span className="text-xs text-muted-foreground ml-2">{user.streak} day streak</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-4">
-                  <div className="text-right">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Badge variant="secondary" className="bg-green-100 text-green-700">
-                        <Heart className="h-3 w-3 mr-1" />
-                        {user.selfCarePoints}
-                      </Badge>
-                      <Badge variant="secondary" className="bg-purple-100 text-purple-700">
-                        <Target className="h-3 w-3 mr-1" />
-                        {user.objectivePoints}
-                      </Badge>
-                    </div>
-                    <p className="text-sm font-bold">Total: {user.totalPoints} pts</p>
-                  </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-gray-900">{user.totalPoints.toLocaleString()}</div>
+                  <div className="text-sm text-muted-foreground">{user.checkins} check-ins</div>
                 </div>
               </div>
             ))}
