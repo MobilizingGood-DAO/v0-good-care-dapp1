@@ -6,14 +6,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const limit = Number.parseInt(searchParams.get("limit") || "100")
 
-    // Get leaderboard data using a more complex query since we don't have the view
+    // Get leaderboard data with a join query
     const { data: leaderboardData, error } = await supabase
       .from("users")
       .select(`
         id,
         username,
         wallet_address,
-        user_stats!inner(
+        user_stats (
           total_points,
           current_streak,
           longest_streak,
@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
           last_checkin
         )
       `)
+      .not("user_stats", "is", null)
       .order("user_stats.total_points", { ascending: false })
       .limit(limit)
 

@@ -25,13 +25,16 @@ export class HybridCommunityService {
           points: apiResult.points || 0,
           newStreak: apiResult.streak || 1,
         }
+      } else {
+        // If API fails, try localStorage
+        const localResult = await LocalCheckInService.recordCheckIn(userId, emoji, gratitudeNote)
+        return localResult
       }
     } catch (error) {
       console.warn("API check-in failed, using localStorage:", error)
+      // Fallback to localStorage
+      return await LocalCheckInService.recordCheckIn(userId, emoji, gratitudeNote)
     }
-
-    // Fallback to localStorage
-    return await LocalCheckInService.recordCheckIn(userId, emoji, gratitudeNote)
   }
 
   static async getLeaderboard(limit = 100): Promise<LeaderboardEntry[]> {
@@ -56,6 +59,7 @@ export class HybridCommunityService {
       longestStreak: 0,
       level: entry.level,
       totalCheckins: 0,
+      lastCheckin: undefined,
       rank: entry.rank,
     }))
   }
@@ -131,5 +135,23 @@ export class HybridCommunityService {
     // Fallback to localStorage user ID
     const userId = `user_${walletAddress.slice(-8)}`
     return { success: true, userId }
+  }
+
+  // Helper method to seed demo data
+  static async seedDemoData(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await fetch("/api/community/seed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
+      const data = await response.json()
+      return { success: response.ok, error: data.error }
+    } catch (error) {
+      console.error("Error seeding demo data:", error)
+      return { success: false, error: "Network error" }
+    }
   }
 }

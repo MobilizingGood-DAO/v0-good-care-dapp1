@@ -3,7 +3,11 @@ import { supabase } from "@/lib/supabase"
 
 export async function GET(request: NextRequest, { params }: { params: { userId: string } }) {
   try {
-    const userId = params.userId
+    const { userId } = params
+
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
 
     // Get user stats
     const { data: stats, error: statsError } = await supabase
@@ -13,7 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: { userId: 
       .single()
 
     if (statsError && statsError.code !== "PGRST116") {
-      console.error("Error fetching user stats:", statsError)
+      console.error("Error fetching stats:", statsError)
       return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 })
     }
 
@@ -32,13 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: { userId: 
 
     return NextResponse.json({
       success: true,
-      stats: stats || {
-        total_points: 0,
-        current_streak: 0,
-        longest_streak: 0,
-        level: 1,
-        total_checkins: 0,
-      },
+      stats,
       checkIns: checkIns || [],
     })
   } catch (error) {
