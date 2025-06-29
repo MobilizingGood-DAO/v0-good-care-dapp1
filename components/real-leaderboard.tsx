@@ -4,8 +4,23 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { RealLeaderboardService, type LeaderboardEntry } from "@/lib/real-leaderboard-service"
-import { Trophy, Users, Loader2, Medal, Award, RefreshCw } from "lucide-react"
+import { Trophy, Users, Loader2, Medal, Award, RefreshCw, Heart, Target } from "lucide-react"
+
+interface LeaderboardEntry {
+  userId: string
+  username: string
+  walletAddress: string
+  avatar?: string
+  selfCarePoints: number
+  careObjectivePoints: number
+  totalPoints: number
+  currentStreak: number
+  longestStreak: number
+  level: number
+  totalCheckins: number
+  lastCheckin?: string
+  rank: number
+}
 
 interface RealLeaderboardProps {
   currentUserId?: string
@@ -18,6 +33,13 @@ export function RealLeaderboard({ currentUserId }: RealLeaderboardProps) {
 
   useEffect(() => {
     loadLeaderboard()
+
+    // Set up realtime subscription
+    const subscription = setupRealtimeSync()
+
+    return () => {
+      subscription?.unsubscribe()
+    }
   }, [])
 
   const loadLeaderboard = async (refresh = false) => {
@@ -28,13 +50,29 @@ export function RealLeaderboard({ currentUserId }: RealLeaderboardProps) {
     }
 
     try {
-      const data = await RealLeaderboardService.getGlobalLeaderboard(10)
-      setLeaderboard(data)
+      const response = await fetch("/api/community/leaderboard?limit=10")
+      const data = await response.json()
+
+      if (data.success) {
+        setLeaderboard(data.leaderboard)
+      }
     } catch (error) {
       console.error("Error loading leaderboard:", error)
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
+    }
+  }
+
+  const setupRealtimeSync = () => {
+    // This would be implemented with Supabase realtime
+    // For now, we'll refresh every 30 seconds
+    const interval = setInterval(() => {
+      loadLeaderboard(true)
+    }, 30000)
+
+    return {
+      unsubscribe: () => clearInterval(interval),
     }
   }
 
@@ -136,7 +174,17 @@ export function RealLeaderboard({ currentUserId }: RealLeaderboardProps) {
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-lg">{entry.totalPoints}</p>
-                    <p className="text-xs text-muted-foreground">CARE Points</p>
+                    <p className="text-xs text-muted-foreground mb-1">Total CARE Points</p>
+                    <div className="flex flex-col gap-1 text-xs">
+                      <div className="flex items-center gap-1 text-green-600">
+                        <Heart className="h-3 w-3" />
+                        <span>{entry.selfCarePoints} Self</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-blue-600">
+                        <Target className="h-3 w-3" />
+                        <span>{entry.careObjectivePoints} Objective</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
