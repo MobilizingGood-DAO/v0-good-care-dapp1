@@ -3,21 +3,18 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Trophy, Heart, Users, Target, TrendingUp, Calendar } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Heart, Trophy, Users, Target, TrendingUp } from "lucide-react"
 
 interface LeaderboardUser {
-  userId: string
   username: string
-  avatar?: string
   selfCarePoints: number
   objectivePoints: number
   totalPoints: number
-  totalCheckins: number
-  currentStreak: number
-  rank: number
-  lastCheckin?: string
+  streak: number
+  checkins: number
+  objectives: number
+  recentDays: boolean[]
 }
 
 interface LeaderboardStats {
@@ -25,86 +22,66 @@ interface LeaderboardStats {
   totalSelfCarePoints: number
   totalObjectivePoints: number
   totalPoints: number
-  averagePointsPerUser: number
+  averageStreak: number
 }
 
-export function RealLeaderboard() {
-  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([])
-  const [stats, setStats] = useState<LeaderboardStats | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+interface LeaderboardData {
+  leaderboard: LeaderboardUser[]
+  stats: LeaderboardStats
+  lastUpdated: string
+}
 
-  useEffect(() => {
-    fetchLeaderboard()
-    const interval = setInterval(fetchLeaderboard, 30000) // Refresh every 30 seconds
-    return () => clearInterval(interval)
-  }, [])
+export default function RealLeaderboard() {
+  const [data, setData] = useState<LeaderboardData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const fetchLeaderboard = async () => {
     try {
       const response = await fetch("/api/community/leaderboard")
-      const data = await response.json()
-
-      if (data.success) {
-        setLeaderboard(data.leaderboard || [])
-        setStats(data.stats)
-        setError(null)
-      } else {
-        setError(data.error || "Failed to fetch leaderboard")
+      if (!response.ok) {
+        throw new Error("Failed to fetch leaderboard")
       }
+      const result = await response.json()
+      setData(result)
+      setError(null)
     } catch (err) {
       console.error("Error fetching leaderboard:", err)
-      setError("Failed to connect to server")
+      setError("Failed to load leaderboard")
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
   }
 
-  const getRankIcon = (rank: number) => {
-    switch (rank) {
-      case 1:
-        return "🥇"
-      case 2:
-        return "🥈"
-      case 3:
-        return "🥉"
-      default:
-        return `#${rank}`
-    }
-  }
+  useEffect(() => {
+    fetchLeaderboard()
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchLeaderboard, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
-  const getStreakDots = (streak: number) => {
-    const dots = []
-    const maxDots = 7
-    const activeDots = Math.min(streak, maxDots)
-
-    for (let i = 0; i < maxDots; i++) {
-      dots.push(<div key={i} className={`w-2 h-2 rounded-full ${i < activeDots ? "bg-green-500" : "bg-gray-200"}`} />)
-    }
-    return dots
-  }
-
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-64" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[...Array(4)].map((_, i) => (
-                <Skeleton key={i} className="h-16" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="p-4">
+                <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                <div className="h-8 bg-gray-200 rounded"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card className="animate-pulse">
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-16 bg-gray-200 rounded"></div>
               ))}
             </div>
           </CardContent>
         </Card>
-        <div className="space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-20" />
-          ))}
-        </div>
       </div>
     )
   }
@@ -112,11 +89,21 @@ export function RealLeaderboard() {
   if (error) {
     return (
       <Card>
-        <CardContent className="pt-6">
-          <div className="text-center text-muted-foreground">
-            <p>Unable to load leaderboard</p>
-            <p className="text-sm">{error}</p>
-          </div>
+        <CardContent className="p-6 text-center">
+          <p className="text-red-500 mb-4">{error}</p>
+          <button onClick={fetchLeaderboard} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+            Try Again
+          </button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!data) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-center">
+          <p className="text-gray-500">No leaderboard data available</p>
         </CardContent>
       </Card>
     )
@@ -125,120 +112,163 @@ export function RealLeaderboard() {
   return (
     <div className="space-y-6">
       {/* Stats Overview */}
-      {stats && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-green-600" />
-              Community Stats
-            </CardTitle>
-            <CardDescription>Overall community wellness metrics</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-blue-50 rounded-lg">
-                <Users className="h-6 w-6 text-blue-600 mx-auto mb-1" />
-                <div className="text-2xl font-bold text-blue-600">{stats.totalUsers}</div>
-                <div className="text-xs text-muted-foreground">Active Users</div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-blue-600">Total Users</p>
+                <p className="text-2xl font-bold text-blue-900">{data.stats.totalUsers}</p>
               </div>
-              <div className="text-center p-3 bg-green-50 rounded-lg">
-                <Heart className="h-6 w-6 text-green-600 mx-auto mb-1" />
-                <div className="text-2xl font-bold text-green-600">{stats.totalSelfCarePoints.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Self-CARE Points</div>
-              </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg">
-                <Target className="h-6 w-6 text-purple-600 mx-auto mb-1" />
-                <div className="text-2xl font-bold text-purple-600">{stats.totalObjectivePoints.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Community Points</div>
-              </div>
-              <div className="text-center p-3 bg-orange-50 rounded-lg">
-                <Trophy className="h-6 w-6 text-orange-600 mx-auto mb-1" />
-                <div className="text-2xl font-bold text-orange-600">{stats.totalPoints.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Total Points</div>
-              </div>
+              <Users className="h-8 w-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
-      )}
+
+        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-green-600">Self-CARE Points</p>
+                <p className="text-2xl font-bold text-green-900">{data.stats.totalSelfCarePoints.toLocaleString()}</p>
+              </div>
+              <Heart className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-purple-600">Community Points</p>
+                <p className="text-2xl font-bold text-purple-900">{data.stats.totalObjectivePoints.toLocaleString()}</p>
+              </div>
+              <Target className="h-8 w-8 text-purple-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-orange-600">Total Points</p>
+                <p className="text-2xl font-bold text-orange-900">{data.stats.totalPoints.toLocaleString()}</p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-orange-500" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Leaderboard */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Trophy className="h-5 w-5 text-yellow-600" />
+            <Trophy className="h-5 w-5 text-yellow-500" />
             Community Leaderboard
           </CardTitle>
-          <CardDescription>Top wellness champions in our community</CardDescription>
+          <CardDescription>
+            Showing Self-CARE points (daily check-ins) + Community CARE points (objectives)
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {leaderboard.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8">
-              <p>No leaderboard data available yet</p>
-              <p className="text-sm">Complete your first check-in to appear here!</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {leaderboard.map((user) => (
-                <div
-                  key={user.userId}
-                  className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
-                    user.rank <= 3
-                      ? "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200"
-                      : "bg-gray-50 hover:bg-gray-100"
-                  }`}
-                >
-                  {/* Rank */}
-                  <div className="text-2xl font-bold min-w-[3rem] text-center">{getRankIcon(user.rank)}</div>
+          <div className="space-y-4">
+            {data.leaderboard.map((user, index) => (
+              <div
+                key={user.username}
+                className={`flex items-center justify-between p-4 rounded-lg border ${
+                  index === 0
+                    ? "bg-gradient-to-r from-yellow-50 to-yellow-100 border-yellow-200"
+                    : index === 1
+                      ? "bg-gradient-to-r from-gray-50 to-gray-100 border-gray-200"
+                      : index === 2
+                        ? "bg-gradient-to-r from-orange-50 to-orange-100 border-orange-200"
+                        : "bg-gray-50 border-gray-200"
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-lg font-bold ${
+                        index === 0
+                          ? "text-yellow-600"
+                          : index === 1
+                            ? "text-gray-600"
+                            : index === 2
+                              ? "text-orange-600"
+                              : "text-gray-500"
+                      }`}
+                    >
+                      #{index + 1}
+                    </span>
+                    {index < 3 && (
+                      <Trophy
+                        className={`h-4 w-4 ${
+                          index === 0 ? "text-yellow-500" : index === 1 ? "text-gray-500" : "text-orange-500"
+                        }`}
+                      />
+                    )}
+                  </div>
 
-                  {/* Avatar */}
-                  <Avatar className="h-12 w-12">
-                    <AvatarImage src={user.avatar || "/placeholder.svg"} alt={user.username} />
-                    <AvatarFallback className="bg-green-100 text-green-700">
+                  <Avatar>
+                    <AvatarFallback className="bg-blue-100 text-blue-600">
                       {user.username.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
 
-                  {/* User Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold truncate">{user.username}</h3>
-                      <Badge variant="secondary" className="text-xs">
-                        {user.currentStreak} day streak
-                      </Badge>
+                  <div>
+                    <p className="font-semibold">{user.username}</p>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <span>🔥 {user.streak} day streak</span>
+                      <span>•</span>
+                      <span>{user.checkins} check-ins</span>
+                      <span>•</span>
+                      <span>{user.objectives} objectives</span>
                     </div>
-
-                    {/* Points Breakdown */}
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-1">
-                        <Heart className="h-3 w-3 text-green-600" />
-                        <span className="text-green-600 font-medium">{user.selfCarePoints}</span>
-                        <span className="text-muted-foreground">Self-CARE</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Target className="h-3 w-3 text-purple-600" />
-                        <span className="text-purple-600 font-medium">{user.objectivePoints}</span>
-                        <span className="text-muted-foreground">Community</span>
-                      </div>
-                    </div>
-
-                    {/* Streak Visualization */}
-                    <div className="flex items-center gap-1 mt-2">
-                      <Calendar className="h-3 w-3 text-muted-foreground" />
-                      <div className="flex gap-1">{getStreakDots(user.currentStreak)}</div>
-                    </div>
-                  </div>
-
-                  {/* Total Points */}
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-orange-600">{user.totalPoints.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">Total Points</div>
                   </div>
                 </div>
-              ))}
+
+                <div className="flex items-center gap-4">
+                  {/* Recent Activity Dots */}
+                  <div className="flex gap-1">
+                    {user.recentDays.map((active, dayIndex) => (
+                      <div
+                        key={dayIndex}
+                        className={`w-2 h-2 rounded-full ${active ? "bg-green-500" : "bg-gray-200"}`}
+                        title={`${7 - dayIndex} days ago`}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Points Breakdown */}
+                  <div className="text-right">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="outline" className="text-green-600 border-green-200">
+                        Self: {user.selfCarePoints}
+                      </Badge>
+                      <Badge variant="outline" className="text-purple-600 border-purple-200">
+                        Community: {user.objectivePoints}
+                      </Badge>
+                    </div>
+                    <p className="text-lg font-bold text-blue-600">{user.totalPoints} pts</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {data.leaderboard.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              <Heart className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p>No community members yet. Be the first to check in!</p>
             </div>
           )}
         </CardContent>
       </Card>
+
+      <p className="text-xs text-gray-500 text-center">Last updated: {new Date(data.lastUpdated).toLocaleString()}</p>
     </div>
   )
 }

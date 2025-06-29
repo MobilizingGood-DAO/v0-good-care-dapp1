@@ -1,5 +1,5 @@
 {
-  "name": "good-care-network",
+  "name": "good-care-dapp",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "@auth/core": "latest",
+    "@connectkit/nextjs": "^1.8.0",
     "@emotion/is-prop-valid": "latest",
     "@radix-ui/react-accordion": "latest",
+    "@radix-ui/react-alert-dialog": "^1.0.5",
     "@radix-ui/react-avatar": "latest",
     "@radix-ui/react-checkbox": "latest",
     "@radix-ui/react-dialog": "latest",
@@ -22,12 +24,14 @@
     "@radix-ui/react-slot": "latest",
     "@radix-ui/react-switch": "latest",
     "@radix-ui/react-tabs": "latest",
+    "@radix-ui/react-textarea": "^1.0.4",
     "@radix-ui/react-toast": "latest",
     "@rainbow-me/rainbowkit": "latest",
     "@supabase/supabase-js": "latest",
     "@tanstack/react-query": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "connectkit": "latest",
     "crypto": "latest",
     "date-fns": "latest",
     "ethers": "latest",
@@ -42,7 +46,7 @@
     "recharts": "latest",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
-    "viem": "latest",
+    "viem": "^2.7.6",
     "wagmi": "latest"
   },
   "devDependencies": {
@@ -51,7 +55,7 @@
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
-    "eslint-config-next": "14.0.0",
+    "eslint-config-next": "14.1.0",
     "postcss": "^8.5",
     "tailwindcss": "^3.3.0",
     "typescript": "^5"

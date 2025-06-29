@@ -1,123 +1,75 @@
 "use client"
 
-import type React from "react"
-import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit"
 import { WagmiProvider } from "wagmi"
-import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
-import { defineChain } from "viem"
-import { metaMask, coinbaseWallet } from "wagmi/connectors"
+import { mainnet, sepolia } from "wagmi/chains"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { ConnectKitProvider, getDefaultConfig } from "connectkit"
+import type { ReactNode } from "react"
 
-// Define GOOD CARE Network chain
-const goodCareNetwork = defineChain({
-  id: 741741,
-  name: "GOOD CARE Network",
+// Define GOOD CARE Subnet
+const goodCareSubnet = {
+  id: 432201,
+  name: "GOOD CARE Subnet",
   nativeCurrency: {
     decimals: 18,
-    name: "CARE",
-    symbol: "CARE",
+    name: "GOOD",
+    symbol: "GOOD",
   },
   rpcUrls: {
     default: {
-      http: ["https://subnets.avax.network/goodcare/mainnet/rpc"],
+      http: [process.env.NEXT_PUBLIC_GOODCARE_RPC || "https://subnets.avax.network/goodcare/mainnet/rpc"],
+    },
+    public: {
+      http: [process.env.NEXT_PUBLIC_GOODCARE_RPC || "https://subnets.avax.network/goodcare/mainnet/rpc"],
     },
   },
   blockExplorers: {
-    default: {
-      name: "GOOD CARE Explorer",
-      url: "https://subnets.avax.network/goodcare",
-    },
+    default: { name: "GOOD Explorer", url: "https://subnets.avax.network/goodcare" },
   },
-})
+  testnet: false,
+} as const
 
-// Configure wagmi with specific connectors (removed WalletConnect to fix domain error)
 const config = getDefaultConfig({
-  appName: "GOOD CARE Network",
-  projectId: "96ac3be93570659af072073d3e77c2b6",
-  chains: [goodCareNetwork],
-  connectors: [
-    metaMask({
-      dappMetadata: {
-        name: "GOOD CARE Network",
-        url: "https://goodonavax.vercel.app",
-      },
-    }),
-    coinbaseWallet({
-      appName: "GOOD CARE Network",
-      appLogoUrl: "https://goodonavax.vercel.app/placeholder-logo.png",
-    }),
-  ],
-  ssr: true,
+  // Your dApps chains
+  chains: [goodCareSubnet, mainnet, sepolia],
+
+  // Required API Keys
+  walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "",
+
+  // Required App Info
+  appName: "GOOD CARE DApp",
+  appDescription: "Your GOOD Passport to a kinder, regenerative crypto experience",
+  appUrl: "https://goodcare.network",
+  appIcon: "https://goodcare.network/logo.png",
 })
 
-// Create query client
 const queryClient = new QueryClient()
 
 interface WalletProviderProps {
-  children: React.ReactNode
+  children: ReactNode
 }
 
-export function WalletProvider({ children }: WalletProviderProps) {
+export default function WalletProvider({ children }: WalletProviderProps) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider
-          modalSize="compact"
-          theme={{
-            lightMode: {
-              colors: {
-                accentColor: "#10b981",
-                accentColorForeground: "white",
-                actionButtonBorder: "rgba(0, 0, 0, 0.04)",
-                actionButtonBorderMobile: "rgba(0, 0, 0, 0.06)",
-                actionButtonSecondaryBackground: "rgba(0, 0, 0, 0.06)",
-                closeButton: "rgba(60, 66, 66, 0.8)",
-                closeButtonBackground: "rgba(0, 0, 0, 0.06)",
-                connectButtonBackground: "#10b981",
-                connectButtonBackgroundError: "#FF494A",
-                connectButtonInnerBackground: "linear-gradient(0deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.06))",
-                connectButtonText: "white",
-                connectButtonTextError: "white",
-                connectionIndicator: "#30E000",
-                downloadBottomCardBackground:
-                  "linear-gradient(126deg, rgba(255, 255, 255, 0) 9.49%, rgba(171, 171, 171, 0.04) 71.04%), #FFFFFF",
-                downloadTopCardBackground:
-                  "linear-gradient(126deg, rgba(171, 171, 171, 0.2) 9.49%, rgba(255, 255, 255, 0) 71.04%), #FFFFFF",
-                error: "#FF494A",
-                generalBorder: "rgba(0, 0, 0, 0.06)",
-                generalBorderDim: "rgba(0, 0, 0, 0.03)",
-                menuItemBackground: "rgba(60, 66, 66, 0.1)",
-                modalBackdrop: "rgba(0, 0, 0, 0.3)",
-                modalBackground: "white",
-                modalBorder: "rgba(0, 0, 0, 0.06)",
-                modalText: "#25292E",
-                modalTextDim: "rgba(60, 66, 66, 0.3)",
-                modalTextSecondary: "rgba(60, 66, 66, 0.6)",
-                profileAction: "white",
-                profileActionHover: "rgba(255, 255, 255, 0.5)",
-                profileForeground: "rgba(60, 66, 66, 0.06)",
-                selectedOptionBorder: "rgba(60, 66, 66, 0.1)",
-                standby: "#FFD641",
-              },
-            },
+        <ConnectKitProvider
+          theme="auto"
+          mode="light"
+          options={{
+            initialChainId: goodCareSubnet.id,
+            enforceSupportedChains: false,
+            disclaimer: (
+              <div style={{ padding: "16px", textAlign: "center" }}>
+                <p style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>Welcome to GOOD CARE Network</p>
+                <p style={{ fontSize: "12px", color: "#888" }}>Your embedded wallet for a kinder crypto experience</p>
+              </div>
+            ),
           }}
         >
           {children}
-        </RainbowKitProvider>
+        </ConnectKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   )
-}
-
-// Export for backward compatibility
-export { WalletProvider as WalletProviderWrapper }
-
-// Custom hook for backward compatibility
-export function useWallet() {
-  return {
-    publicKey: null,
-    connected: false,
-    connect: async () => {},
-    disconnect: () => {},
-    wallet: null,
-  }
 }
