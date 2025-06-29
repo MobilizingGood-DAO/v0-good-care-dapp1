@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
 
     if (statsError) {
       console.error("Error creating user stats:", statsError)
+      // Don't fail the user creation, just log the error
     }
 
     return NextResponse.json({ success: true, user: newUser })

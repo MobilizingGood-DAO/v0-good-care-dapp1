@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         )
       `)
       .not("user_stats", "is", null)
-      .order("user_stats.total_points", { ascending: false })
+      .order("user_stats(total_points)", { ascending: false })
       .limit(limit)
 
     if (error) {

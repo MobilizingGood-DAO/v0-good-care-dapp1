@@ -3,68 +3,131 @@ import { supabase } from "@/lib/supabase"
 
 export async function POST(request: NextRequest) {
   try {
-    // Create some demo users for testing
+    // Demo users data
     const demoUsers = [
-      { wallet_address: "0x1234567890123456789012345678901234567890", username: "Alice_Care" },
-      { wallet_address: "0x2345678901234567890123456789012345678901", username: "Bob_Wellness" },
-      { wallet_address: "0x3456789012345678901234567890123456789012", username: "Charlie_Good" },
-      { wallet_address: "0x4567890123456789012345678901234567890123", username: "Diana_Health" },
+      {
+        wallet_address: "0x1234567890123456789012345678901234567890",
+        username: "CareGiver_Alice",
+        points: 850,
+        streak: 12,
+        checkins: 25,
+      },
+      {
+        wallet_address: "0x2345678901234567890123456789012345678901",
+        username: "Wellness_Bob",
+        points: 720,
+        streak: 8,
+        checkins: 18,
+      },
+      {
+        wallet_address: "0x3456789012345678901234567890123456789012",
+        username: "Mindful_Carol",
+        points: 650,
+        streak: 15,
+        checkins: 22,
+      },
+      {
+        wallet_address: "0x4567890123456789012345678901234567890123",
+        username: "Grateful_Dave",
+        points: 580,
+        streak: 5,
+        checkins: 16,
+      },
+      {
+        wallet_address: "0x5678901234567890123456789012345678901234",
+        username: "Peaceful_Eve",
+        points: 420,
+        streak: 3,
+        checkins: 12,
+      },
     ]
 
-    for (const userData of demoUsers) {
-      // Check if user exists
-      const { data: existingUser } = await supabase
+    const results = []
+
+    for (const demoUser of demoUsers) {
+      // Check if user already exists
+      const { data: existingUser, error: fetchError } = await supabase
         .from("users")
         .select("id")
-        .eq("wallet_address", userData.wallet_address)
+        .eq("wallet_address", demoUser.wallet_address)
         .single()
 
-      if (!existingUser) {
-        // Create user
-        const { data: newUser, error: userError } = await supabase.from("users").insert(userData).select().single()
+      if (fetchError && fetchError.code !== "PGRST116") {
+        console.error("Error checking existing user:", fetchError)
+        continue
+      }
 
-        if (userError) {
-          console.error("Error creating demo user:", userError)
-          continue
-        }
+      if (existingUser) {
+        results.push({ user: demoUser.username, status: "already exists" })
+        continue
+      }
 
-        // Create some demo check-ins and stats
-        const randomPoints = Math.floor(Math.random() * 500) + 100
-        const randomStreak = Math.floor(Math.random() * 10) + 1
-        const randomCheckins = Math.floor(Math.random() * 20) + 5
-
-        // Insert user stats
-        await supabase.from("user_stats").insert({
-          user_id: newUser.id,
-          total_points: randomPoints,
-          current_streak: randomStreak,
-          longest_streak: randomStreak + Math.floor(Math.random() * 5),
-          level: Math.floor(randomPoints / 100) + 1,
-          total_checkins: randomCheckins,
-          last_checkin: new Date().toISOString().split("T")[0],
+      // Create user
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert({
+          wallet_address: demoUser.wallet_address,
+          username: demoUser.username,
         })
+        .select()
+        .single()
 
-        // Insert some demo check-ins
-        for (let i = 0; i < Math.min(randomCheckins, 5); i++) {
-          const date = new Date()
-          date.setDate(date.getDate() - i)
+      if (createError) {
+        console.error("Error creating demo user:", createError)
+        results.push({ user: demoUser.username, status: "failed to create", error: createError.message })
+        continue
+      }
 
-          await supabase.from("daily_checkins").insert({
+      // Create user stats
+      const level = Math.max(1, Math.floor(demoUser.points / 100) + 1)
+      const { error: statsError } = await supabase.from("user_stats").insert({
+        user_id: newUser.id,
+        total_points: demoUser.points,
+        current_streak: demoUser.streak,
+        longest_streak: demoUser.streak,
+        level: level,
+        total_checkins: demoUser.checkins,
+        last_checkin: new Date().toISOString().split("T")[0],
+      })
+
+      if (statsError) {
+        console.error("Error creating demo user stats:", statsError)
+        results.push({ user: demoUser.username, status: "user created but stats failed", error: statsError.message })
+        continue
+      }
+
+      // Create some demo check-ins
+      const checkInPromises = []
+      for (let i = 0; i < Math.min(demoUser.checkins, 5); i++) {
+        const date = new Date()
+        date.setDate(date.getDate() - i)
+        const dateStr = date.toISOString().split("T")[0]
+
+        checkInPromises.push(
+          supabase.from("daily_checkins").insert({
             user_id: newUser.id,
-            date: date.toISOString().split("T")[0],
+            date: dateStr,
             mood: Math.floor(Math.random() * 5) + 1,
             mood_label: ["😢", "😕", "😐", "😊", "😄"][Math.floor(Math.random() * 5)],
-            points: Math.floor(Math.random() * 30) + 10,
-            streak: Math.floor(Math.random() * 10) + 1,
-            gratitude_note: i % 2 === 0 ? "Grateful for this community!" : null,
-          })
-        }
+            points: 10 + (Math.random() > 0.5 ? 5 : 0), // Random gratitude bonus
+            streak: Math.max(1, demoUser.streak - i),
+            gratitude_note: Math.random() > 0.5 ? "Grateful for this community!" : null,
+          }),
+        )
       }
+
+      await Promise.all(checkInPromises)
+
+      results.push({ user: demoUser.username, status: "created successfully" })
     }
 
-    return NextResponse.json({ success: true, message: "Demo data seeded" })
+    return NextResponse.json({
+      success: true,
+      message: "Demo data seeding completed",
+      results: results,
+    })
   } catch (error) {
-    console.error("Seed Error:", error)
-    return NextResponse.json({ error: "Failed to seed data" }, { status: 500 })
+    console.error("API Error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

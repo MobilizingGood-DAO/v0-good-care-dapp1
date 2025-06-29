@@ -17,8 +17,8 @@ export async function GET(request: NextRequest, { params }: { params: { userId: 
       .single()
 
     if (statsError && statsError.code !== "PGRST116") {
-      console.error("Error fetching stats:", statsError)
-      return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 })
+      console.error("Error fetching user stats:", statsError)
+      return NextResponse.json({ error: "Failed to fetch user stats" }, { status: 500 })
     }
 
     // Get recent check-ins
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: { userId: 
 
     return NextResponse.json({
       success: true,
-      stats,
+      stats: stats,
       checkIns: checkIns || [],
     })
   } catch (error) {
