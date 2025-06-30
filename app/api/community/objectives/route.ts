@@ -7,11 +7,16 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const username = searchParams.get("username")
+    const status = searchParams.get("status")
 
-    let query = supabase.from("care_objectives").select("*").order("created_at", { ascending: false })
+    let query = supabase.from("care_objectives").select("*").order("assigned_at", { ascending: false })
 
     if (username) {
       query = query.eq("username", username)
+    }
+
+    if (status) {
+      query = query.eq("status", status)
     }
 
     const { data, error } = await query
@@ -28,58 +33,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { username, title, description, category } = body
-
-    if (!username || !title || !category) {
-      return NextResponse.json({ error: "Missing required fields: username, title, category" }, { status: 400 })
-    }
-
-    // Determine points based on category
-    const categoryPoints: Record<string, number> = {
-      mentorship: 100,
-      content: 75,
-      support: 50,
-      events: 125,
-    }
-
-    const points = categoryPoints[category] || 50
-
-    const { data, error } = await supabase
-      .from("care_objectives")
-      .insert({
-        username,
-        title,
-        description: description || "",
-        category,
-        points,
-        status: "pending",
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error("Error creating objective:", error)
-      return NextResponse.json({ error: "Failed to create objective" }, { status: 500 })
-    }
-
-    return NextResponse.json({
-      objective: data,
-      message: "Objective created successfully",
-      success: true,
-    })
-  } catch (error) {
-    console.error("Objectives POST API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
+// PATCH endpoint for users to update their objective status (start, complete, add evidence)
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, status, username } = body
+    const { id, status, evidence_url, username } = body
 
     if (!id || !status) {
       return NextResponse.json({ error: "Missing required fields: id, status" }, { status: 400 })
@@ -87,11 +45,24 @@ export async function PATCH(request: NextRequest) {
 
     const updateData: any = { status }
 
-    if (status === "completed") {
-      updateData.completed_at = new Date().toISOString()
+    if (status === "active" && !updateData.started_at) {
+      updateData.started_at = new Date().toISOString()
     }
 
-    const { data, error } = await supabase.from("care_objectives").update(updateData).eq("id", id).select().single()
+    if (status === "completed") {
+      updateData.completed_at = new Date().toISOString()
+      if (evidence_url) {
+        updateData.evidence_url = evidence_url
+      }
+    }
+
+    const { data, error } = await supabase
+      .from("care_objectives")
+      .update(updateData)
+      .eq("id", id)
+      .eq("username", username) // Ensure users can only update their own objectives
+      .select()
+      .single()
 
     if (error) {
       console.error("Error updating objective:", error)

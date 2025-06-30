@@ -31,11 +31,19 @@ interface CheckinData {
   isPublic?: boolean
 }
 
-interface ObjectiveData {
+interface CareObjective {
+  id: string
   username: string
   title: string
   description: string
   category: "mentorship" | "content" | "support" | "events"
+  points: number
+  status: "assigned" | "active" | "completed" | "verified"
+  evidence_url?: string
+  assigned_at: string
+  started_at?: string
+  completed_at?: string
+  verified_at?: string
 }
 
 class HybridCommunityService {
@@ -46,6 +54,8 @@ class HybridCommunityService {
   constructor() {
     if (typeof window !== "undefined") {
       // Monitor online status
+      this.isOnline = navigator.onLine
+
       window.addEventListener("online", () => {
         this.isOnline = true
         this.processSyncQueue()
@@ -105,8 +115,8 @@ class HybridCommunityService {
         try {
           if (item.type === "checkin") {
             await this.submitCheckinOnline(item.data)
-          } else if (item.type === "objective") {
-            await this.submitObjectiveOnline(item.data)
+          } else if (item.type === "objective_update") {
+            await this.updateObjectiveOnline(item.data)
           }
 
           processedItems.push(i)
@@ -221,46 +231,7 @@ class HybridCommunityService {
     return result
   }
 
-  async submitObjective(data: ObjectiveData): Promise<{ success: boolean; message: string }> {
-    if (this.isOnline) {
-      try {
-        return await this.submitObjectiveOnline(data)
-      } catch (error) {
-        console.error("Online objective submission failed, queuing for later:", error)
-        this.addToSyncQueue("objective", data)
-        return {
-          success: true,
-          message: "Objective saved offline. Will sync when online.",
-        }
-      }
-    } else {
-      this.addToSyncQueue("objective", data)
-      return {
-        success: true,
-        message: "Objective saved offline. Will sync when online.",
-      }
-    }
-  }
-
-  private async submitObjectiveOnline(data: ObjectiveData): Promise<{ success: boolean; message: string }> {
-    const response = await fetch("/api/community/objectives", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || "Failed to submit objective")
-    }
-
-    const result = await response.json()
-    return result
-  }
-
-  async getUserObjectives(username: string) {
+  async getUserObjectives(username: string): Promise<{ objectives: CareObjective[]; success: boolean }> {
     if (this.isOnline) {
       try {
         const response = await fetch(`/api/community/objectives?username=${encodeURIComponent(username)}`)
@@ -277,6 +248,52 @@ class HybridCommunityService {
     }
   }
 
+  async updateObjective(
+    id: string,
+    status: string,
+    evidence_url?: string,
+    username?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const data = { id, status, evidence_url, username }
+
+    if (this.isOnline) {
+      try {
+        return await this.updateObjectiveOnline(data)
+      } catch (error) {
+        console.error("Online objective update failed, queuing for later:", error)
+        this.addToSyncQueue("objective_update", data)
+        return {
+          success: true,
+          message: "Objective update saved offline. Will sync when online.",
+        }
+      }
+    } else {
+      this.addToSyncQueue("objective_update", data)
+      return {
+        success: true,
+        message: "Objective update saved offline. Will sync when online.",
+      }
+    }
+  }
+
+  private async updateObjectiveOnline(data: any): Promise<{ success: boolean; message: string }> {
+    const response = await fetch("/api/community/objectives", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || "Failed to update objective")
+    }
+
+    const result = await response.json()
+    return result
+  }
+
   getSyncQueueLength(): number {
     return this.syncQueue.length
   }
@@ -285,7 +302,7 @@ class HybridCommunityService {
     return !this.isOnline
   }
 
-  async forcSync(): Promise<void> {
+  async forceSync(): Promise<void> {
     if (this.isOnline) {
       await this.processSyncQueue()
     }

@@ -12,39 +12,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields: username, mood" }, { status: 400 })
     }
 
-    // Get user's current streak
-    const { data: existingCheckins, error: streakError } = await supabase
+    const today = new Date().toISOString().split("T")[0]
+    const userId = `user_${username}`
+
+    // Check if user already checked in today
+    const { data: existingCheckin } = await supabase
       .from("daily_checkins")
-      .select("created_at, streak")
-      .eq("username", username)
-      .order("created_at", { ascending: false })
-      .limit(1)
+      .select("id")
+      .eq("user_id", userId)
+      .eq("date", today)
+      .single()
 
-    if (streakError) {
-      console.error("Error fetching streak:", streakError)
-    }
-
-    // Calculate new streak
-    let newStreak = 1
-    if (existingCheckins && existingCheckins.length > 0) {
-      const lastCheckin = new Date(existingCheckins[0].created_at)
-      const today = new Date()
-      const yesterday = new Date(today)
-      yesterday.setDate(yesterday.getDate() - 1)
-
-      // Check if last check-in was yesterday
-      const lastCheckinDate = lastCheckin.toDateString()
-      const yesterdayDate = yesterday.toDateString()
-      const todayDate = today.toDateString()
-
-      if (lastCheckinDate === yesterdayDate) {
-        // Continue streak
-        newStreak = (existingCheckins[0].streak || 0) + 1
-      } else if (lastCheckinDate === todayDate) {
-        // Already checked in today, update existing
-        newStreak = existingCheckins[0].streak || 1
-      }
-      // If last check-in was more than 1 day ago, streak resets to 1
+    if (existingCheckin) {
+      return NextResponse.json({ error: "Already checked in today" }, { status: 400 })
     }
 
     // Calculate points
@@ -53,75 +33,61 @@ export async function POST(request: NextRequest) {
       points += 5 // Bonus for gratitude
     }
 
-    // Streak bonus (up to 10 extra points)
-    const streakBonus = Math.min(newStreak, 10)
-    points += streakBonus
-
-    // Check if user already checked in today
-    const today = new Date().toISOString().split("T")[0]
-    const { data: todayCheckin, error: todayError } = await supabase
-      .from("daily_checkins")
-      .select("id")
+    // Get current streak to calculate streak bonus
+    const { data: userStats } = await supabase
+      .from("user_stats")
+      .select("current_streak")
       .eq("username", username)
-      .gte("created_at", `${today}T00:00:00.000Z`)
-      .lt("created_at", `${today}T23:59:59.999Z`)
       .single()
 
-    if (todayError && todayError.code !== "PGRST116") {
-      console.error("Error checking today's checkin:", todayError)
+    const currentStreak = (userStats?.current_streak || 0) + 1
+    const streakBonus = Math.min(currentStreak, 10) // Max 10 bonus points for streak
+    points += streakBonus
+
+    // Insert check-in
+    const { data: checkin, error: checkinError } = await supabase
+      .from("daily_checkins")
+      .insert({
+        user_id: userId,
+        username,
+        mood,
+        gratitude: gratitude || "",
+        points,
+        date: today,
+      })
+      .select()
+      .single()
+
+    if (checkinError) {
+      console.error("Error creating check-in:", checkinError)
+      return NextResponse.json({ error: "Failed to create check-in" }, { status: 500 })
     }
 
-    let result
-    if (todayCheckin) {
-      // Update existing check-in
-      const { data, error } = await supabase
-        .from("daily_checkins")
-        .update({
-          mood,
-          gratitude: gratitude || "",
-          is_public: isPublic,
-          points,
-          streak: newStreak,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", todayCheckin.id)
-        .select()
-        .single()
+    // Update user stats
+    const { error: statsError } = await supabase.rpc("update_user_stats_on_checkin", {
+      p_username: username,
+      p_points: points,
+    })
 
-      if (error) {
-        console.error("Error updating check-in:", error)
-        return NextResponse.json({ error: "Failed to update check-in" }, { status: 500 })
-      }
+    if (statsError) {
+      console.error("Error updating user stats:", statsError)
+    }
 
-      result = data
-    } else {
-      // Create new check-in
-      const { data, error } = await supabase
-        .from("daily_checkins")
-        .insert({
-          username,
-          mood,
-          gratitude: gratitude || "",
-          is_public: isPublic,
-          points,
-          streak: newStreak,
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Error creating check-in:", error)
-        return NextResponse.json({ error: "Failed to create check-in" }, { status: 500 })
-      }
-
-      result = data
+    // If public, add to public gratitude
+    if (isPublic && gratitude && gratitude.trim().length > 0) {
+      await supabase.from("public_gratitude").insert({
+        user_id: userId,
+        username,
+        gratitude,
+        mood,
+      })
     }
 
     return NextResponse.json({
-      checkin: result,
+      checkin,
       points,
-      streak: newStreak,
-      message: `Check-in successful! Earned ${points} points. Current streak: ${newStreak} days.`,
+      streak: currentStreak,
+      message: `Check-in successful! Earned ${points} points (${streakBonus} streak bonus)`,
       success: true,
     })
   } catch (error) {
@@ -134,19 +100,15 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const username = searchParams.get("username")
-    const publicOnly = searchParams.get("public") === "true"
+    const limit = Number.parseInt(searchParams.get("limit") || "10")
 
-    let query = supabase.from("daily_checkins").select("*").order("created_at", { ascending: false })
+    let query = supabase.from("daily_checkins").select("*").order("created_at", { ascending: false }).limit(limit)
 
     if (username) {
       query = query.eq("username", username)
     }
 
-    if (publicOnly) {
-      query = query.eq("is_public", true)
-    }
-
-    const { data, error } = await query.limit(50)
+    const { data, error } = await query
 
     if (error) {
       console.error("Error fetching check-ins:", error)

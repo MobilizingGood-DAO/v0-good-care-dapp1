@@ -1,107 +1,76 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Get self-care points from daily check-ins
-    const { data: checkinData, error: checkinError } = await supabase
-      .from("daily_checkins")
-      .select("username, mood, gratitude, streak, created_at")
+    // Get all users with their check-in stats
+    const { data: users, error: usersError } = await supabase
+      .from("user_stats")
+      .select("*")
+      .order("total_points", { ascending: false })
 
-    if (checkinError) {
-      console.error("Error fetching check-ins:", checkinError)
-      return NextResponse.json({ error: "Failed to fetch check-ins" }, { status: 500 })
+    if (usersError) {
+      console.error("Error fetching users:", usersError)
+      return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 })
     }
 
-    // Get community objective points
-    const { data: objectiveData, error: objectiveError } = await supabase
+    // Get community objective points for each user
+    const { data: objectives, error: objectivesError } = await supabase
       .from("care_objectives")
       .select("username, points, status")
-      .eq("status", "completed")
+      .in("status", ["completed", "verified"])
 
-    if (objectiveError) {
-      console.error("Error fetching objectives:", objectiveError)
+    if (objectivesError) {
+      console.error("Error fetching objectives:", objectivesError)
       return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
     }
 
-    // Calculate self-care points per user
-    const selfCarePoints: Record<string, number> = {}
-    const userStats: Record<string, { streak: number; checkins: number; lastCheckin: string }> = {}
-
-    checkinData?.forEach((checkin) => {
-      const username = checkin.username
-      if (!selfCarePoints[username]) {
-        selfCarePoints[username] = 0
-        userStats[username] = { streak: 0, checkins: 0, lastCheckin: "" }
-      }
-
-      // Base points: 10 for check-in + 5 for gratitude
-      let points = 10
-      if (checkin.gratitude && checkin.gratitude.trim().length > 0) {
-        points += 5
-      }
-
-      // Streak bonus (up to 10 extra points)
-      const streakBonus = Math.min(checkin.streak || 0, 10)
-      points += streakBonus
-
-      selfCarePoints[username] += points
-      userStats[username].checkins += 1
-      userStats[username].streak = Math.max(userStats[username].streak, checkin.streak || 0)
-      userStats[username].lastCheckin = checkin.created_at
+    // Calculate community points for each user
+    const communityPointsMap = new Map<string, number>()
+    objectives?.forEach((obj) => {
+      const current = communityPointsMap.get(obj.username) || 0
+      communityPointsMap.set(obj.username, current + obj.points)
     })
 
-    // Calculate community objective points per user
-    const objectivePoints: Record<string, number> = {}
-    objectiveData?.forEach((objective) => {
-      const username = objective.username
-      if (!objectivePoints[username]) {
-        objectivePoints[username] = 0
-      }
-      objectivePoints[username] += objective.points
-    })
+    // Combine self-care and community points
+    const leaderboard =
+      users?.map((user, index) => {
+        const communityPoints = communityPointsMap.get(user.username) || 0
+        const selfCarePoints = user.total_points || 0
+        const totalPoints = selfCarePoints + communityPoints
+        const level = Math.floor(totalPoints / 100) + 1
 
-    // Merge and create leaderboard
-    const allUsers = new Set([...Object.keys(selfCarePoints), ...Object.keys(objectivePoints)])
-    const leaderboard = Array.from(allUsers).map((username) => {
-      const selfCare = selfCarePoints[username] || 0
-      const community = objectivePoints[username] || 0
-      const total = selfCare + community
-      const stats = userStats[username] || { streak: 0, checkins: 0, lastCheckin: "" }
+        return {
+          username: user.username,
+          selfCarePoints,
+          communityPoints,
+          totalPoints,
+          streak: user.current_streak || 0,
+          checkins: user.total_checkins || 0,
+          lastCheckin: user.last_checkin || new Date().toISOString(),
+          level,
+          rank: index + 1,
+        }
+      }) || []
 
-      return {
-        username,
-        selfCarePoints: selfCare,
-        communityPoints: community,
-        totalPoints: total,
-        streak: stats.streak,
-        checkins: stats.checkins,
-        lastCheckin: stats.lastCheckin,
-        level: Math.floor(total / 100) + 1,
-        rank: 0, // Will be set after sorting
-      }
-    })
-
-    // Sort by total points and assign ranks
+    // Re-sort by total points and update ranks
     leaderboard.sort((a, b) => b.totalPoints - a.totalPoints)
     leaderboard.forEach((user, index) => {
       user.rank = index + 1
     })
 
-    // Calculate community stats
-    const totalUsers = leaderboard.length
-    const totalSelfCarePoints = leaderboard.reduce((sum, user) => sum + user.selfCarePoints, 0)
-    const totalCommunityPoints = leaderboard.reduce((sum, user) => sum + user.communityPoints, 0)
-    const totalPoints = totalSelfCarePoints + totalCommunityPoints
-
+    // Calculate stats
     const stats = {
-      totalUsers,
-      totalSelfCarePoints,
-      totalCommunityPoints,
-      totalPoints,
-      averagePointsPerUser: totalUsers > 0 ? Math.round(totalPoints / totalUsers) : 0,
+      totalUsers: leaderboard.length,
+      totalSelfCarePoints: leaderboard.reduce((sum, user) => sum + user.selfCarePoints, 0),
+      totalCommunityPoints: leaderboard.reduce((sum, user) => sum + user.communityPoints, 0),
+      totalPoints: leaderboard.reduce((sum, user) => sum + user.totalPoints, 0),
+      averagePointsPerUser:
+        leaderboard.length > 0
+          ? Math.round(leaderboard.reduce((sum, user) => sum + user.totalPoints, 0) / leaderboard.length)
+          : 0,
     }
 
     return NextResponse.json({

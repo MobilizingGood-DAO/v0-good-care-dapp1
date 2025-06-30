@@ -1,24 +1,24 @@
 "use client"
 
-import type React from "react"
-import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit"
-import { WagmiProvider } from "wagmi"
-import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
-import { defineChain } from "viem"
+import { createContext, useContext, type ReactNode } from "react"
+import { createConfig, WagmiProvider, useAccount, useConnect, useDisconnect } from "wagmi"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { metaMask, coinbaseWallet } from "wagmi/connectors"
+import { http } from "viem"
+import { defineChain } from "viem"
 
-// Define GOOD CARE Network chain
-const goodCareNetwork = defineChain({
-  id: 741741,
-  name: "GOOD CARE Network",
+// Define GOOD CARE Subnet
+const goodCareSubnet = defineChain({
+  id: 432201,
+  name: "GOOD CARE Subnet",
   nativeCurrency: {
     decimals: 18,
-    name: "CARE",
-    symbol: "CARE",
+    name: "GOOD",
+    symbol: "GOOD",
   },
   rpcUrls: {
     default: {
-      http: ["https://subnets.avax.network/goodcare/mainnet/rpc"],
+      http: [process.env.NEXT_PUBLIC_GOODCARE_RPC || "https://subnets.avax.network/goodcare/mainnet/rpc"],
     },
   },
   blockExplorers: {
@@ -29,95 +29,95 @@ const goodCareNetwork = defineChain({
   },
 })
 
-// Configure wagmi with specific connectors (removed WalletConnect to fix domain error)
-const config = getDefaultConfig({
-  appName: "GOOD CARE Network",
-  projectId: "96ac3be93570659af072073d3e77c2b6",
-  chains: [goodCareNetwork],
+// Create wagmi config
+const config = createConfig({
+  chains: [goodCareSubnet],
   connectors: [
     metaMask({
       dappMetadata: {
-        name: "GOOD CARE Network",
-        url: "https://goodonavax.vercel.app",
+        name: "GOOD CARE DApp",
+        url: "https://goodcare.network",
       },
     }),
     coinbaseWallet({
-      appName: "GOOD CARE Network",
-      appLogoUrl: "https://goodonavax.vercel.app/placeholder-logo.png",
+      appName: "GOOD CARE DApp",
+      appLogoUrl: "/placeholder-logo.png",
     }),
   ],
-  ssr: true,
+  transports: {
+    [goodCareSubnet.id]: http(),
+  },
 })
 
-// Create query client
+// Create a client
 const queryClient = new QueryClient()
 
-interface WalletProviderProps {
-  children: React.ReactNode
+interface WalletContextType {
+  address: string | undefined
+  isConnected: boolean
+  isConnecting: boolean
+  connect: (connectorId?: string) => Promise<void>
+  disconnect: () => Promise<void>
+  chainId: number | undefined
 }
 
-export function WalletProvider({ children }: WalletProviderProps) {
+const WalletContext = createContext<WalletContextType | undefined>(undefined)
+
+function WalletProviderInner({ children }: { children: ReactNode }) {
+  const { address, isConnected, chainId } = useAccount()
+  const { connect: wagmiConnect, connectors, isPending } = useConnect()
+  const { disconnect: wagmiDisconnect } = useDisconnect()
+
+  const connect = async (connectorId?: string) => {
+    try {
+      const connector = connectorId ? connectors.find((c) => c.id === connectorId) || connectors[0] : connectors[0]
+
+      if (connector) {
+        await wagmiConnect({ connector })
+      }
+    } catch (error) {
+      console.error("Failed to connect wallet:", error)
+    }
+  }
+
+  const disconnect = async () => {
+    try {
+      await wagmiDisconnect()
+    } catch (error) {
+      console.error("Failed to disconnect wallet:", error)
+    }
+  }
+
+  return (
+    <WalletContext.Provider
+      value={{
+        address,
+        isConnected,
+        isConnecting: isPending,
+        connect,
+        disconnect,
+        chainId,
+      }}
+    >
+      {children}
+    </WalletContext.Provider>
+  )
+}
+
+export function WalletProvider({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider
-          modalSize="compact"
-          theme={{
-            lightMode: {
-              colors: {
-                accentColor: "#10b981",
-                accentColorForeground: "white",
-                actionButtonBorder: "rgba(0, 0, 0, 0.04)",
-                actionButtonBorderMobile: "rgba(0, 0, 0, 0.06)",
-                actionButtonSecondaryBackground: "rgba(0, 0, 0, 0.06)",
-                closeButton: "rgba(60, 66, 66, 0.8)",
-                closeButtonBackground: "rgba(0, 0, 0, 0.06)",
-                connectButtonBackground: "#10b981",
-                connectButtonBackgroundError: "#FF494A",
-                connectButtonInnerBackground: "linear-gradient(0deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.06))",
-                connectButtonText: "white",
-                connectButtonTextError: "white",
-                connectionIndicator: "#30E000",
-                downloadBottomCardBackground:
-                  "linear-gradient(126deg, rgba(255, 255, 255, 0) 9.49%, rgba(171, 171, 171, 0.04) 71.04%), #FFFFFF",
-                downloadTopCardBackground:
-                  "linear-gradient(126deg, rgba(171, 171, 171, 0.2) 9.49%, rgba(255, 255, 255, 0) 71.04%), #FFFFFF",
-                error: "#FF494A",
-                generalBorder: "rgba(0, 0, 0, 0.06)",
-                generalBorderDim: "rgba(0, 0, 0, 0.03)",
-                menuItemBackground: "rgba(60, 66, 66, 0.1)",
-                modalBackdrop: "rgba(0, 0, 0, 0.3)",
-                modalBackground: "white",
-                modalBorder: "rgba(0, 0, 0, 0.06)",
-                modalText: "#25292E",
-                modalTextDim: "rgba(60, 66, 66, 0.3)",
-                modalTextSecondary: "rgba(60, 66, 66, 0.6)",
-                profileAction: "white",
-                profileActionHover: "rgba(255, 255, 255, 0.5)",
-                profileForeground: "rgba(60, 66, 66, 0.06)",
-                selectedOptionBorder: "rgba(60, 66, 66, 0.1)",
-                standby: "#FFD641",
-              },
-            },
-          }}
-        >
-          {children}
-        </RainbowKitProvider>
+        <WalletProviderInner>{children}</WalletProviderInner>
       </QueryClientProvider>
     </WagmiProvider>
   )
 }
 
-// Export for backward compatibility
-export { WalletProvider as WalletProviderWrapper }
-
-// Custom hook for backward compatibility
 export function useWallet() {
-  return {
-    publicKey: null,
-    connected: false,
-    connect: async () => {},
-    disconnect: () => {},
-    wallet: null,
+  const context = useContext(WalletContext)
+  if (context === undefined) {
+    throw new Error("useWallet must be used within a WalletProvider")
   }
+  return context
 }

@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Trophy, Heart, Users, Target, TrendingUp } from "lucide-react"
+import { Trophy, Heart, Users, Target, TrendingUp, RefreshCw } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 interface LeaderboardUser {
   username: string
@@ -36,10 +37,16 @@ export default function RealLeaderboard() {
   const [data, setData] = useState<LeaderboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = async (showRefreshing = false) => {
     try {
-      setLoading(true)
+      if (showRefreshing) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
+
       const response = await fetch("/api/community/leaderboard")
       const result = await response.json()
 
@@ -54,13 +61,14 @@ export default function RealLeaderboard() {
       setError(err instanceof Error ? err.message : "Failed to load leaderboard")
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
   useEffect(() => {
     fetchLeaderboard()
     // Refresh every 30 seconds
-    const interval = setInterval(fetchLeaderboard, 30000)
+    const interval = setInterval(() => fetchLeaderboard(true), 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -86,6 +94,17 @@ export default function RealLeaderboard() {
       dots.push(<div key={i} className={`w-2 h-2 rounded-full ${i < activeDots ? "bg-green-500" : "bg-gray-200"}`} />)
     }
     return dots
+  }
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+
+    if (diffInHours < 1) return "Just now"
+    if (diffInHours < 24) return `${diffInHours}h ago`
+    const diffInDays = Math.floor(diffInHours / 24)
+    return `${diffInDays}d ago`
   }
 
   if (loading) {
@@ -125,9 +144,9 @@ export default function RealLeaderboard() {
       <Card>
         <CardContent className="p-6 text-center">
           <p className="text-red-500 mb-4">{error}</p>
-          <button onClick={fetchLeaderboard} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+          <Button onClick={() => fetchLeaderboard()} variant="outline">
             Try Again
-          </button>
+          </Button>
         </CardContent>
       </Card>
     )
@@ -199,27 +218,33 @@ export default function RealLeaderboard() {
       {/* Leaderboard */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Trophy className="h-5 w-5 text-yellow-500" />
-            <span>Community Leaderboard</span>
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center space-x-2">
+              <Trophy className="h-5 w-5 text-yellow-500" />
+              <span>Community Leaderboard</span>
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={() => fetchLeaderboard(true)} disabled={refreshing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {data.leaderboard.map((user) => (
               <div
                 key={user.username}
-                className={`flex items-center justify-between p-4 rounded-lg border ${
+                className={`flex items-center justify-between p-4 rounded-lg border transition-all hover:shadow-md ${
                   user.rank <= 3
                     ? "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200"
-                    : "bg-gray-50 border-gray-200"
+                    : "bg-gray-50 border-gray-200 hover:bg-gray-100"
                 }`}
               >
                 <div className="flex items-center space-x-4">
                   <div className="flex items-center justify-center w-10 h-10">{getRankIcon(user.rank)}</div>
 
                   <Avatar className="h-10 w-10">
-                    <AvatarFallback className="bg-blue-100 text-blue-600">
+                    <AvatarFallback className="bg-blue-100 text-blue-600 font-semibold">
                       {user.username.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -246,7 +271,9 @@ export default function RealLeaderboard() {
 
                       <div className="flex items-center space-x-1">
                         {getStreakDots(user.streak)}
-                        <span className="text-xs text-muted-foreground ml-2">{user.streak} day streak</span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          {user.streak} day{user.streak !== 1 ? "s" : ""}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -254,7 +281,10 @@ export default function RealLeaderboard() {
 
                 <div className="text-right">
                   <div className="text-2xl font-bold text-gray-900">{user.totalPoints.toLocaleString()}</div>
-                  <div className="text-sm text-muted-foreground">{user.checkins} check-ins</div>
+                  <div className="text-sm text-muted-foreground">
+                    {user.checkins} check-in{user.checkins !== 1 ? "s" : ""}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{formatTimeAgo(user.lastCheckin)}</div>
                 </div>
               </div>
             ))}
