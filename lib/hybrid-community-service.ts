@@ -1,206 +1,218 @@
-interface User {
-  username: string
-  selfCarePoints: number
-  communityPoints: number
-  totalPoints: number
-  streak: number
-  checkins: number
-  lastCheckin: string
-  level: number
-  rank: number
+// Hybrid Community Service - Handles online/offline scenarios with sync queue
+// NO EventEmitter2 - uses simple polling and local storage
+
+interface SyncQueueItem {
+  id: string
+  type: "checkin" | "objective_update"
+  data: any
+  timestamp: number
+  retries: number
 }
 
 interface CommunityStats {
   totalUsers: number
   totalSelfCarePoints: number
   totalCommunityPoints: number
+  averagePoints: number
+}
+
+interface LeaderboardUser {
+  user_id: string
+  username: string
+  avatar_url?: string
+  selfCarePoints: number
+  communityPoints: number
   totalPoints: number
-  averagePointsPerUser: number
-}
-
-interface LeaderboardData {
-  leaderboard: User[]
-  stats: CommunityStats
-  success: boolean
-}
-
-interface CheckinData {
-  username: string
-  mood: string
-  gratitude: string
-  isPublic?: boolean
-}
-
-interface CareObjective {
-  id: string
-  username: string
-  title: string
-  description: string
-  category: "mentorship" | "content" | "support" | "events"
-  points: number
-  status: "assigned" | "active" | "completed" | "verified"
-  evidence_url?: string
-  assigned_at: string
-  started_at?: string
-  completed_at?: string
-  verified_at?: string
+  checkInCount: number
+  objectiveCount: number
+  rank: number
+  lastActivity?: string
 }
 
 class HybridCommunityService {
-  private syncQueue: Array<{ type: string; data: any; timestamp: number }> = []
+  private syncQueue: SyncQueueItem[] = []
   private isOnline = true
   private syncInProgress = false
+  private readonly STORAGE_KEY = "goodcare_sync_queue"
+  private readonly CACHE_KEY = "goodcare_leaderboard_cache"
+  private readonly MAX_RETRIES = 3
 
   constructor() {
+    this.initializeService()
+  }
+
+  private initializeService() {
+    // Load sync queue from localStorage
+    this.loadSyncQueue()
+
+    // Monitor online status
     if (typeof window !== "undefined") {
-      // Monitor online status
       this.isOnline = navigator.onLine
 
       window.addEventListener("online", () => {
+        console.log("🌐 Back online - processing sync queue")
         this.isOnline = true
         this.processSyncQueue()
       })
 
       window.addEventListener("offline", () => {
+        console.log("📴 Gone offline - queuing operations")
         this.isOnline = false
       })
 
-      // Load sync queue from localStorage
-      this.loadSyncQueue()
+      // Process sync queue periodically
+      setInterval(() => {
+        if (this.isOnline && this.syncQueue.length > 0) {
+          this.processSyncQueue()
+        }
+      }, 30000) // Every 30 seconds
     }
   }
 
   private loadSyncQueue() {
     try {
-      const stored = localStorage.getItem("community_sync_queue")
+      const stored = localStorage.getItem(this.STORAGE_KEY)
       if (stored) {
         this.syncQueue = JSON.parse(stored)
+        console.log("📦 Loaded sync queue:", this.syncQueue.length, "items")
       }
     } catch (error) {
-      console.error("Error loading sync queue:", error)
+      console.error("❌ Error loading sync queue:", error)
       this.syncQueue = []
     }
   }
 
   private saveSyncQueue() {
     try {
-      localStorage.setItem("community_sync_queue", JSON.stringify(this.syncQueue))
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.syncQueue))
     } catch (error) {
-      console.error("Error saving sync queue:", error)
+      console.error("❌ Error saving sync queue:", error)
     }
   }
 
-  private addToSyncQueue(type: string, data: any) {
-    this.syncQueue.push({
+  private addToSyncQueue(type: SyncQueueItem["type"], data: any) {
+    const item: SyncQueueItem = {
+      id: `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       type,
       data,
       timestamp: Date.now(),
-    })
+      retries: 0,
+    }
+
+    this.syncQueue.push(item)
     this.saveSyncQueue()
+
+    console.log("📝 Added to sync queue:", item.id, type)
+
+    // Try to process immediately if online
+    if (this.isOnline) {
+      this.processSyncQueue()
+    }
   }
 
   private async processSyncQueue() {
-    if (this.syncInProgress || !this.isOnline || this.syncQueue.length === 0) {
+    if (this.syncInProgress || this.syncQueue.length === 0) {
       return
     }
 
     this.syncInProgress = true
+    console.log("🔄 Processing sync queue:", this.syncQueue.length, "items")
 
-    try {
-      const processedItems: number[] = []
+    const itemsToProcess = [...this.syncQueue]
 
-      for (let i = 0; i < this.syncQueue.length; i++) {
-        const item = this.syncQueue[i]
+    for (const item of itemsToProcess) {
+      try {
+        let success = false
 
-        try {
-          if (item.type === "checkin") {
-            await this.submitCheckinOnline(item.data)
-          } else if (item.type === "objective_update") {
-            await this.updateObjectiveOnline(item.data)
+        switch (item.type) {
+          case "checkin":
+            success = await this.syncCheckin(item.data)
+            break
+          case "objective_update":
+            success = await this.syncObjectiveUpdate(item.data)
+            break
+        }
+
+        if (success) {
+          // Remove from queue
+          this.syncQueue = this.syncQueue.filter((q) => q.id !== item.id)
+          console.log("✅ Synced:", item.id)
+        } else {
+          // Increment retry count
+          item.retries++
+          if (item.retries >= this.MAX_RETRIES) {
+            console.error("❌ Max retries reached for:", item.id)
+            this.syncQueue = this.syncQueue.filter((q) => q.id !== item.id)
           }
-
-          processedItems.push(i)
-        } catch (error) {
-          console.error(`Failed to sync ${item.type}:`, error)
-          // Keep failed items in queue for retry
         }
-      }
-
-      // Remove successfully processed items
-      this.syncQueue = this.syncQueue.filter((_, index) => !processedItems.includes(index))
-      this.saveSyncQueue()
-    } catch (error) {
-      console.error("Error processing sync queue:", error)
-    } finally {
-      this.syncInProgress = false
-    }
-  }
-
-  async getLeaderboard(): Promise<LeaderboardData> {
-    if (this.isOnline) {
-      try {
-        const response = await fetch("/api/community/leaderboard")
-        if (!response.ok) {
-          throw new Error("Failed to fetch leaderboard")
-        }
-        const data = await response.json()
-
-        // Cache the data locally
-        localStorage.setItem(
-          "cached_leaderboard",
-          JSON.stringify({
-            data,
-            timestamp: Date.now(),
-          }),
-        )
-
-        return data
       } catch (error) {
-        console.error("Error fetching online leaderboard:", error)
-        return this.getCachedLeaderboard()
+        console.error("💥 Error processing sync item:", item.id, error)
+        item.retries++
+        if (item.retries >= this.MAX_RETRIES) {
+          this.syncQueue = this.syncQueue.filter((q) => q.id !== item.id)
+        }
       }
-    } else {
-      return this.getCachedLeaderboard()
     }
+
+    this.saveSyncQueue()
+    this.syncInProgress = false
+
+    console.log("🏁 Sync queue processed. Remaining:", this.syncQueue.length)
   }
 
-  private getCachedLeaderboard(): LeaderboardData {
+  private async syncCheckin(data: any): Promise<boolean> {
     try {
-      const cached = localStorage.getItem("cached_leaderboard")
-      if (cached) {
-        const { data, timestamp } = JSON.parse(cached)
-        // Use cached data if it's less than 5 minutes old
-        if (Date.now() - timestamp < 5 * 60 * 1000) {
-          return data
-        }
-      }
+      const response = await fetch("/api/community/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      return response.ok
     } catch (error) {
-      console.error("Error loading cached leaderboard:", error)
-    }
-
-    // Return default empty leaderboard
-    return {
-      leaderboard: [],
-      stats: {
-        totalUsers: 0,
-        totalSelfCarePoints: 0,
-        totalCommunityPoints: 0,
-        totalPoints: 0,
-        averagePointsPerUser: 0,
-      },
-      success: false,
+      console.error("❌ Error syncing check-in:", error)
+      return false
     }
   }
 
-  async submitCheckin(data: CheckinData): Promise<{ success: boolean; message: string }> {
+  private async syncObjectiveUpdate(data: any): Promise<boolean> {
+    try {
+      const response = await fetch("/api/community/objectives", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      return response.ok
+    } catch (error) {
+      console.error("❌ Error syncing objective update:", error)
+      return false
+    }
+  }
+
+  // Public methods
+  async submitCheckin(userId: string, mood: number, gratitude?: string, isPublic = false) {
+    const data = { userId, mood, gratitude, isPublic }
+
     if (this.isOnline) {
       try {
-        return await this.submitCheckinOnline(data)
+        const response = await fetch("/api/community/checkin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log("✅ Check-in submitted online:", result)
+          return result
+        } else {
+          throw new Error("Network request failed")
+        }
       } catch (error) {
-        console.error("Online checkin failed, queuing for later:", error)
+        console.log("📴 Check-in failed, adding to queue:", error)
         this.addToSyncQueue("checkin", data)
         return {
           success: true,
+          offline: true,
           message: "Check-in saved offline. Will sync when online.",
         }
       }
@@ -208,107 +220,113 @@ class HybridCommunityService {
       this.addToSyncQueue("checkin", data)
       return {
         success: true,
+        offline: true,
         message: "Check-in saved offline. Will sync when online.",
       }
     }
   }
 
-  private async submitCheckinOnline(data: CheckinData): Promise<{ success: boolean; message: string }> {
-    const response = await fetch("/api/community/checkin", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    })
+  async updateObjective(objectiveId: string, userId: string, status?: string, evidence?: string) {
+    const data = { objectiveId, userId, status, evidence }
 
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || "Failed to submit check-in")
-    }
-
-    const result = await response.json()
-    return result
-  }
-
-  async getUserObjectives(username: string): Promise<{ objectives: CareObjective[]; success: boolean }> {
     if (this.isOnline) {
       try {
-        const response = await fetch(`/api/community/objectives?username=${encodeURIComponent(username)}`)
-        if (!response.ok) {
-          throw new Error("Failed to fetch objectives")
+        const response = await fetch("/api/community/objectives", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log("✅ Objective updated online:", result)
+          return result
+        } else {
+          throw new Error("Network request failed")
         }
-        return await response.json()
       } catch (error) {
-        console.error("Error fetching user objectives:", error)
-        return { objectives: [], success: false }
-      }
-    } else {
-      return { objectives: [], success: false }
-    }
-  }
-
-  async updateObjective(
-    id: string,
-    status: string,
-    evidence_url?: string,
-    username?: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const data = { id, status, evidence_url, username }
-
-    if (this.isOnline) {
-      try {
-        return await this.updateObjectiveOnline(data)
-      } catch (error) {
-        console.error("Online objective update failed, queuing for later:", error)
+        console.log("📴 Objective update failed, adding to queue:", error)
         this.addToSyncQueue("objective_update", data)
         return {
           success: true,
-          message: "Objective update saved offline. Will sync when online.",
+          offline: true,
+          message: "Update saved offline. Will sync when online.",
         }
       }
     } else {
       this.addToSyncQueue("objective_update", data)
       return {
         success: true,
-        message: "Objective update saved offline. Will sync when online.",
+        offline: true,
+        message: "Update saved offline. Will sync when online.",
       }
     }
   }
 
-  private async updateObjectiveOnline(data: any): Promise<{ success: boolean; message: string }> {
-    const response = await fetch("/api/community/objectives", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || "Failed to update objective")
-    }
-
-    const result = await response.json()
-    return result
-  }
-
-  getSyncQueueLength(): number {
-    return this.syncQueue.length
-  }
-
-  isOffline(): boolean {
-    return !this.isOnline
-  }
-
-  async forceSync(): Promise<void> {
+  async getLeaderboard(): Promise<{ leaderboard: LeaderboardUser[]; stats: CommunityStats }> {
     if (this.isOnline) {
-      await this.processSyncQueue()
+      try {
+        const response = await fetch("/api/community/leaderboard")
+        if (response.ok) {
+          const data = await response.json()
+          // Cache the result
+          localStorage.setItem(
+            this.CACHE_KEY,
+            JSON.stringify({
+              data,
+              timestamp: Date.now(),
+            }),
+          )
+          return data
+        }
+      } catch (error) {
+        console.error("❌ Error fetching leaderboard:", error)
+      }
     }
+
+    // Fallback to cached data
+    try {
+      const cached = localStorage.getItem(this.CACHE_KEY)
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached)
+        const age = Date.now() - timestamp
+
+        // Use cached data if less than 5 minutes old
+        if (age < 5 * 60 * 1000) {
+          console.log("📦 Using cached leaderboard data")
+          return data
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error loading cached leaderboard:", error)
+    }
+
+    // Return empty data if no cache available
+    return {
+      leaderboard: [],
+      stats: {
+        totalUsers: 0,
+        totalSelfCarePoints: 0,
+        totalCommunityPoints: 0,
+        averagePoints: 0,
+      },
+    }
+  }
+
+  getSyncQueueStatus() {
+    return {
+      isOnline: this.isOnline,
+      queueLength: this.syncQueue.length,
+      syncInProgress: this.syncInProgress,
+    }
+  }
+
+  clearSyncQueue() {
+    this.syncQueue = []
+    this.saveSyncQueue()
+    console.log("🗑️ Sync queue cleared")
   }
 }
 
 // Export singleton instance
 export const hybridCommunityService = new HybridCommunityService()
-export default hybridCommunityService
