@@ -37,6 +37,7 @@ interface LeaderboardUser {
 interface LeaderboardData {
   leaderboard: LeaderboardUser[]
   stats: CommunityStats
+  success: boolean
 }
 
 interface CheckinData {
@@ -243,12 +244,14 @@ class HybridCommunityService {
       })
 
       if (!response.ok) {
+        console.error("❌ Leaderboard API error:", response.status, response.statusText)
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
       const result = await response.json()
 
       if (result.error) {
+        console.error("❌ API returned error:", result.error)
         throw new Error(result.error)
       }
 
@@ -261,7 +264,12 @@ class HybridCommunityService {
         }),
       )
 
-      console.log("✅ Leaderboard data fetched successfully:", result.leaderboard?.length || 0, "users")
+      console.log("✅ Leaderboard data fetched successfully:", {
+        users: result.leaderboard?.length || 0,
+        stats: result.stats,
+        success: result.success,
+      })
+
       return result
     } catch (error) {
       console.error("❌ Error fetching leaderboard:", error)
@@ -400,7 +408,7 @@ class HybridCommunityService {
   }
 }
 
-// Export singleton instance - THIS WAS THE MISSING PIECE!
+// Export singleton instance - THIS IS THE KEY EXPORT!
 export const hybridCommunityService = new HybridCommunityService()
 
 // Also export the types for use in components

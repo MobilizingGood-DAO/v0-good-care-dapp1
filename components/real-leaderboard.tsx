@@ -4,8 +4,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Trophy, Medal, Award, Users, TrendingUp, Heart, Target, Loader2, RefreshCw } from "lucide-react"
+import { Trophy, Medal, Award, Users, TrendingUp, Heart, Target, Loader2, RefreshCw, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { hybridCommunityService, type LeaderboardData } from "@/lib/hybrid-community-service"
 
 export function RealLeaderboard() {
@@ -16,22 +17,29 @@ export function RealLeaderboard() {
 
   const fetchLeaderboard = async (showRefreshing = false) => {
     try {
-      if (showRefreshing) setRefreshing(true)
-      else setLoading(true)
+      if (showRefreshing) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
 
-      console.log("🔄 Fetching leaderboard from service...")
+      console.log("🔄 Component: Fetching leaderboard from service...")
       const result = await hybridCommunityService.getLeaderboard()
 
       if (result) {
-        console.log("✅ Leaderboard data received:", result.leaderboard?.length || 0, "users")
+        console.log("✅ Component: Leaderboard data received:", {
+          users: result.leaderboard?.length || 0,
+          success: result.success,
+          stats: result.stats,
+        })
         setData(result)
         setError(null)
       } else {
-        console.log("❌ No leaderboard data received")
+        console.log("❌ Component: No leaderboard data received")
         setError("Failed to load leaderboard data")
       }
     } catch (err) {
-      console.error("❌ Error fetching leaderboard:", err)
+      console.error("❌ Component: Error fetching leaderboard:", err)
       setError(err instanceof Error ? err.message : "Failed to load leaderboard")
     } finally {
       setLoading(false)
@@ -40,17 +48,17 @@ export function RealLeaderboard() {
   }
 
   useEffect(() => {
-    console.log("🚀 RealLeaderboard component mounted")
+    console.log("🚀 Component: RealLeaderboard mounted, fetching data...")
     fetchLeaderboard()
 
     // Refresh every 30 seconds
     const interval = setInterval(() => {
-      console.log("⏰ Auto-refreshing leaderboard...")
+      console.log("⏰ Component: Auto-refreshing leaderboard...")
       fetchLeaderboard(true)
     }, 30000)
 
     return () => {
-      console.log("🛑 RealLeaderboard component unmounted")
+      console.log("🛑 Component: RealLeaderboard unmounted")
       clearInterval(interval)
     }
   }, [])
@@ -86,6 +94,28 @@ export function RealLeaderboard() {
     return activity.slice(0, 7) // Last 7 days
   }
 
+  const renderActivityDots = (activity: string[]) => {
+    const today = new Date()
+    const dots = []
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today)
+      date.setDate(today.getDate() - i)
+      const dateString = date.toISOString().split("T")[0]
+
+      const hasActivity = activity.includes(dateString)
+      dots.push(
+        <div
+          key={i}
+          className={`w-2 h-2 rounded-full ${hasActivity ? "bg-green-500" : "bg-gray-200"}`}
+          title={`${date.toLocaleDateString()}: ${hasActivity ? "Active" : "No activity"}`}
+        />,
+      )
+    }
+
+    return <div className="flex gap-1">{dots}</div>
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -110,22 +140,28 @@ export function RealLeaderboard() {
 
   if (error || !data) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="h-5 w-5" />
-            Community Leaderboard
-          </CardTitle>
-          <CardDescription>Unable to load leaderboard data</CardDescription>
-        </CardHeader>
-        <CardContent className="text-center py-8">
-          <p className="text-muted-foreground mb-4">{error || "No data available"}</p>
-          <Button onClick={() => fetchLeaderboard()} variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Try Again
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-6">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error || "Failed to load leaderboard data"}</AlertDescription>
+        </Alert>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5" />
+              Community Leaderboard
+            </CardTitle>
+            <CardDescription>Unable to load leaderboard data</CardDescription>
+          </CardHeader>
+          <CardContent className="text-center py-8">
+            <Button onClick={() => fetchLeaderboard()} variant="outline">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -134,6 +170,15 @@ export function RealLeaderboard() {
 
   return (
     <div className="space-y-6">
+      {/* Debug Info */}
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          Leaderboard Status: {data.success ? "✅ Connected" : "❌ Error"} | Users: {stats.totalUsers} | Total Points:{" "}
+          {stats.totalPoints.toLocaleString()}
+        </AlertDescription>
+      </Alert>
+
       {/* Community Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
@@ -204,14 +249,15 @@ export function RealLeaderboard() {
           {leaderboard.length === 0 ? (
             <div className="text-center py-8">
               <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No users found. Be the first to check in!</p>
+              <p className="text-muted-foreground mb-2">No users found in the community yet</p>
+              <p className="text-sm text-muted-foreground">Be the first to check in and start your wellness journey!</p>
             </div>
           ) : (
             leaderboard.map((user) => (
               <div
                 key={user.id}
-                className={`flex items-center gap-4 p-4 rounded-lg border ${
-                  user.rank <= 3 ? "bg-gradient-to-r from-yellow-50 to-orange-50" : "bg-muted/30"
+                className={`flex items-center gap-4 p-4 rounded-lg border transition-all hover:shadow-md ${
+                  user.rank <= 3 ? "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200" : "bg-muted/30"
                 }`}
               >
                 {/* Rank */}
@@ -220,7 +266,9 @@ export function RealLeaderboard() {
                 {/* Avatar */}
                 <Avatar className="h-10 w-10">
                   <AvatarImage src={user.avatar_url || "/placeholder.svg"} alt={user.username} />
-                  <AvatarFallback>{user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback className="bg-blue-100 text-blue-600">
+                    {user.username.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
                 </Avatar>
 
                 {/* User Info */}
@@ -229,7 +277,7 @@ export function RealLeaderboard() {
                     <p className="font-medium truncate">{user.username}</p>
                     {user.current_streak > 0 && (
                       <Badge variant="secondary" className="text-xs">
-                        🔥 {user.current_streak}
+                        🔥 {user.current_streak} day streak
                       </Badge>
                     )}
                   </div>
@@ -237,16 +285,16 @@ export function RealLeaderboard() {
                   {/* Points Breakdown */}
                   <div className="flex items-center gap-4 mb-2">
                     <div className="flex items-center gap-1">
-                      <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
+                      <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
                         <Heart className="h-3 w-3 mr-1" />
                         {user.self_care_points}
                       </Badge>
-                      <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700">
+                      <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
                         <Target className="h-3 w-3 mr-1" />
                         {user.community_points}
                       </Badge>
                     </div>
-                    <p className="text-sm font-bold">{user.total_points} total</p>
+                    <p className="text-sm font-bold text-primary">{user.total_points} total</p>
                   </div>
 
                   {/* Progress Bar */}
@@ -260,20 +308,15 @@ export function RealLeaderboard() {
                   </div>
 
                   {/* Recent Activity */}
-                  <div className="flex items-center gap-1">
-                    <p className="text-xs text-muted-foreground mr-2">Recent:</p>
-                    {formatRecentActivity(user.recent_activity).map((date, index) => (
-                      <div key={index} className="w-2 h-2 rounded-full bg-green-400" title={`Active on ${date}`} />
-                    ))}
-                    {formatRecentActivity(user.recent_activity).length === 0 && (
-                      <span className="text-xs text-muted-foreground">No recent activity</span>
-                    )}
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground">Last 7 days:</p>
+                    {renderActivityDots(user.recent_activity)}
                   </div>
                 </div>
 
                 {/* Stats */}
                 <div className="text-right text-sm text-muted-foreground">
-                  <p>{user.total_checkins} check-ins</p>
+                  <p className="font-medium">{user.total_checkins} check-ins</p>
                   <p className="text-xs">Joined {new Date(user.joined_at).toLocaleDateString()}</p>
                 </div>
               </div>

@@ -5,7 +5,7 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 
 export async function GET() {
   try {
-    console.log("🏆 Fetching leaderboard data...")
+    console.log("🏆 API: Fetching leaderboard data from Supabase...")
 
     // Get all user profiles with their stats
     const { data: profiles, error: profilesError } = await supabase
@@ -14,7 +14,7 @@ export async function GET() {
       .order("total_points", { ascending: false })
 
     if (profilesError) {
-      console.error("❌ Error fetching profiles:", profilesError)
+      console.error("❌ API: Error fetching profiles:", profilesError)
       return NextResponse.json(
         {
           error: "Failed to fetch profiles",
@@ -27,13 +27,16 @@ export async function GET() {
             averagePointsPerUser: 0,
             activeUsers: 0,
           },
+          success: false,
         },
         { status: 500 },
       )
     }
 
+    console.log(`✅ API: Found ${profiles?.length || 0} user profiles`)
+
     if (!profiles || profiles.length === 0) {
-      console.log("📝 No profiles found")
+      console.log("📝 API: No profiles found, returning empty leaderboard")
       return NextResponse.json({
         leaderboard: [],
         stats: {
@@ -44,6 +47,7 @@ export async function GET() {
           averagePointsPerUser: 0,
           activeUsers: 0,
         },
+        success: true,
       })
     }
 
@@ -54,7 +58,7 @@ export async function GET() {
       .eq("status", "verified")
 
     if (objectivesError) {
-      console.error("❌ Error fetching objectives:", objectivesError)
+      console.error("❌ API: Error fetching objectives:", objectivesError)
     }
 
     // Calculate community points per user
@@ -66,6 +70,7 @@ export async function GET() {
           communityPointsMap.set(obj.assigned_to, current + obj.points)
         }
       })
+      console.log(`✅ API: Calculated community points for ${communityPointsMap.size} users`)
     }
 
     // Get recent activity for each user (last 7 days)
@@ -129,19 +134,23 @@ export async function GET() {
       activeUsers,
     }
 
-    console.log("✅ Leaderboard generated:", {
-      users: totalUsers,
-      topUser: sortedLeaderboard[0]?.username,
-      topPoints: sortedLeaderboard[0]?.total_points,
-    })
-
-    return NextResponse.json({
+    const response = {
       leaderboard: sortedLeaderboard,
       stats,
       success: true,
+    }
+
+    console.log("✅ API: Leaderboard generated successfully:", {
+      users: totalUsers,
+      topUser: sortedLeaderboard[0]?.username,
+      topPoints: sortedLeaderboard[0]?.total_points,
+      totalSelfCarePoints,
+      totalCommunityPoints,
     })
+
+    return NextResponse.json(response)
   } catch (error) {
-    console.error("💥 Leaderboard API error:", error)
+    console.error("💥 API: Leaderboard error:", error)
     return NextResponse.json(
       {
         error: "Internal server error",
