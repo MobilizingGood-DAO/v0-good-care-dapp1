@@ -1,103 +1,73 @@
--- Create care_objectives table
+-- Create care_objectives table for community CARE points
 CREATE TABLE IF NOT EXISTS care_objectives (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  wallet_address TEXT,
+  objective_type TEXT NOT NULL DEFAULT 'community',
   title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('mentorship', 'content', 'support', 'events')),
+  description TEXT,
   points INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'assigned', 'active', 'completed', 'verified')),
-  assigned_to UUID REFERENCES auth.users(id),
+  category TEXT DEFAULT 'general',
   evidence_url TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'completed', 'rejected')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  assigned_at TIMESTAMP WITH TIME ZONE,
-  started_at TIMESTAMP WITH TIME ZONE,
-  completed_at TIMESTAMP WITH TIME ZONE,
-  verified_at TIMESTAMP WITH TIME ZONE,
-  verified_by UUID REFERENCES auth.users(id)
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  approved_at TIMESTAMP WITH TIME ZONE,
+  completed_at TIMESTAMP WITH TIME ZONE
 );
-
--- Create user_profiles table
-CREATE TABLE IF NOT EXISTS user_profiles (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) UNIQUE,
-  username TEXT UNIQUE NOT NULL,
-  wallet_address TEXT UNIQUE,
-  avatar_url TEXT,
-  bio TEXT,
-  total_points INTEGER DEFAULT 0,
-  current_streak INTEGER DEFAULT 0,
-  max_streak INTEGER DEFAULT 0,
-  total_checkins INTEGER DEFAULT 0,
-  last_checkin_date DATE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create daily_checkins table
-CREATE TABLE IF NOT EXISTS daily_checkins (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id),
-  mood INTEGER NOT NULL CHECK (mood >= 1 AND mood <= 5),
-  gratitude TEXT,
-  is_public BOOLEAN DEFAULT false,
-  points INTEGER DEFAULT 0,
-  streak INTEGER DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  checkin_date DATE DEFAULT CURRENT_DATE,
-  UNIQUE(user_id, checkin_date)
-);
-
--- Insert sample care objectives
-INSERT INTO care_objectives (title, description, category, points, status) VALUES
-('Onboard 5 New Members', 'Help 5 new community members get started with their wellness journey', 'mentorship', 100, 'available'),
-('Create Meditation Guide', 'Write a comprehensive guide on daily meditation practices', 'content', 75, 'available'),
-('Weekly Support Sessions', 'Host weekly peer support sessions for community members', 'support', 50, 'available'),
-('Community Wellness Workshop', 'Organize and facilitate a community wellness workshop', 'events', 125, 'available'),
-('Mental Health Resource List', 'Compile a list of mental health resources and tools', 'content', 60, 'available'),
-('Buddy System Setup', 'Create and manage a buddy system for new members', 'mentorship', 80, 'available'),
-('Gratitude Challenge', 'Design and run a 30-day gratitude challenge', 'events', 90, 'available'),
-('Crisis Support Training', 'Complete training to provide crisis support to community members', 'support', 120, 'available');
 
 -- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_care_objectives_user_id ON care_objectives(user_id);
 CREATE INDEX IF NOT EXISTS idx_care_objectives_status ON care_objectives(status);
-CREATE INDEX IF NOT EXISTS idx_care_objectives_assigned_to ON care_objectives(assigned_to);
-CREATE INDEX IF NOT EXISTS idx_user_profiles_wallet_address ON user_profiles(wallet_address);
-CREATE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins(user_id, checkin_date);
-CREATE INDEX IF NOT EXISTS idx_daily_checkins_date ON daily_checkins(checkin_date);
+CREATE INDEX IF NOT EXISTS idx_care_objectives_category ON care_objectives(category);
+CREATE INDEX IF NOT EXISTS idx_care_objectives_created_at ON care_objectives(created_at);
 
 -- Enable RLS
 ALTER TABLE care_objectives ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE daily_checkins ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Care objectives are viewable by everyone" ON care_objectives FOR SELECT USING (true);
-CREATE POLICY "User profiles are viewable by everyone" ON user_profiles FOR SELECT USING (true);
-CREATE POLICY "Users can view their own checkins" ON daily_checkins FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert their own checkins" ON daily_checkins FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update their own profile" ON user_profiles FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can view all completed objectives" ON care_objectives
+  FOR SELECT USING (status = 'completed');
 
--- Function to update user stats after checkin
-CREATE OR REPLACE FUNCTION update_user_stats_after_checkin()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Update user profile stats
-  UPDATE user_profiles 
-  SET 
-    total_checkins = total_checkins + 1,
-    total_points = total_points + NEW.points,
-    current_streak = NEW.streak,
-    max_streak = GREATEST(max_streak, NEW.streak),
-    last_checkin_date = NEW.checkin_date,
-    updated_at = NOW()
-  WHERE user_id = NEW.user_id;
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+CREATE POLICY "Users can insert their own objectives" ON care_objectives
+  FOR INSERT WITH CHECK (true);
 
--- Trigger to update user stats
-CREATE TRIGGER trigger_update_user_stats_after_checkin
-  AFTER INSERT ON daily_checkins
-  FOR EACH ROW
-  EXECUTE FUNCTION update_user_stats_after_checkin();
+CREATE POLICY "Users can update their own objectives" ON care_objectives
+  FOR UPDATE USING (user_id = current_setting('request.jwt.claims', true)::json->>'sub');
+
+-- Create public_gratitude table for shared gratitude
+CREATE TABLE IF NOT EXISTS public_gratitude (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  gratitude TEXT NOT NULL,
+  mood TEXT,
+  likes INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS for public_gratitude
+ALTER TABLE public_gratitude ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policy for public_gratitude
+CREATE POLICY "Anyone can view public gratitude" ON public_gratitude
+  FOR SELECT USING (true);
+
+CREATE POLICY "Users can insert their own gratitude" ON public_gratitude
+  FOR INSERT WITH CHECK (true);
+
+-- Add is_gratitude_public column to daily_checkins if it doesn't exist
+ALTER TABLE daily_checkins 
+ADD COLUMN IF NOT EXISTS is_gratitude_public BOOLEAN DEFAULT false;
+
+-- Add resources_viewed column to daily_checkins if it doesn't exist
+ALTER TABLE daily_checkins 
+ADD COLUMN IF NOT EXISTS resources_viewed TEXT[] DEFAULT '{}';
+
+-- Insert sample care objectives
+INSERT INTO care_objectives (user_id, username, objective_type, title, description, points, category, status) VALUES
+('demo_user_1', 'CareGiver_Alice', 'mentorship', 'Onboard 5 New Members', 'Help 5 new community members complete their first check-in', 100, 'mentorship', 'completed'),
+('demo_user_2', 'Wellness_Bob', 'content', 'Create Wellness Guide', 'Write comprehensive guide on daily wellness practices', 75, 'content', 'completed'),
+('demo_user_3', 'Helper_Carol', 'support', 'Community Support', 'Provide emotional support in community chat for 1 week', 50, 'support', 'completed'),
+('demo_user_1', 'CareGiver_Alice', 'event', 'Organize Meditation Session', 'Host weekly group meditation for community', 125, 'events', 'completed');

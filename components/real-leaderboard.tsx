@@ -3,75 +3,70 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Trophy, Heart, Users, TrendingUp, Loader2, Target } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Trophy, Users, Loader2, Medal, Award, RefreshCw, Heart, Target } from "lucide-react"
 
-interface LeaderboardUser {
-  id: string
-  user_id: string
+interface LeaderboardEntry {
+  userId: string
   username: string
-  wallet_address: string
-  avatar_url?: string
+  walletAddress: string
   selfCarePoints: number
-  communityPoints: number
+  careObjectivePoints: number
   totalPoints: number
-  totalCheckins: number
   currentStreak: number
-  recentActivity: string[]
+  longestStreak: number
+  level: number
+  totalCheckins: number
+  lastCheckin?: string
   rank: number
-  joinedAt: string
+  objectives: Array<{
+    title: string
+    points: number
+    category: string
+  }>
 }
 
-interface CommunityStats {
+interface LeaderboardStats {
   totalUsers: number
   totalSelfCarePoints: number
-  totalCommunityPoints: number
+  totalObjectivePoints: number
   totalPoints: number
-  averagePointsPerUser: number
-  activeUsers: number
 }
 
-interface LeaderboardData {
-  leaderboard: LeaderboardUser[]
-  stats: CommunityStats
+interface RealLeaderboardProps {
+  currentUserId?: string
 }
 
-export function RealLeaderboard() {
-  const [data, setData] = useState<LeaderboardData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export function RealLeaderboard({ currentUserId }: RealLeaderboardProps) {
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [stats, setStats] = useState<LeaderboardStats | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
-    fetchLeaderboard()
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchLeaderboard, 30000)
-    return () => clearInterval(interval)
+    loadLeaderboard()
   }, [])
 
-  const fetchLeaderboard = async () => {
+  const loadLeaderboard = async (refresh = false) => {
+    if (refresh) {
+      setIsRefreshing(true)
+    } else {
+      setIsLoading(true)
+    }
+
     try {
-      console.log("🏆 Fetching leaderboard...")
-      const response = await fetch("/api/community/leaderboard")
+      const response = await fetch("/api/community/leaderboard?limit=10")
+      const data = await response.json()
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      if (data.success) {
+        setLeaderboard(data.leaderboard || [])
+        setStats(data.stats || null)
       }
-
-      const result = await response.json()
-
-      if (result.error) {
-        throw new Error(result.error)
-      }
-
-      setData(result)
-      setError(null)
-      console.log("✅ Leaderboard loaded:", result.leaderboard?.length || 0, "users")
-    } catch (err) {
-      console.error("❌ Error fetching leaderboard:", err)
-      setError(err instanceof Error ? err.message : "Failed to load leaderboard")
+    } catch (error) {
+      console.error("Error loading leaderboard:", error)
     } finally {
-      setLoading(false)
+      setIsLoading(false)
+      setIsRefreshing(false)
     }
   }
 
@@ -80,61 +75,36 @@ export function RealLeaderboard() {
       case 1:
         return <Trophy className="h-5 w-5 text-yellow-500" />
       case 2:
-        return <Trophy className="h-5 w-5 text-gray-400" />
+        return <Medal className="h-5 w-5 text-gray-400" />
       case 3:
-        return <Trophy className="h-5 w-5 text-amber-600" />
+        return <Award className="h-5 w-5 text-amber-600" />
       default:
-        return <span className="text-sm font-medium text-muted-foreground">#{rank}</span>
+        return <span className="text-sm font-bold text-muted-foreground">#{rank}</span>
     }
   }
 
-  const getActivityDots = (recentActivity: string[], currentStreak: number) => {
-    const today = new Date()
-    const dots = []
-
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today)
-      date.setDate(today.getDate() - i)
-      const dateString = date.toISOString().split("T")[0]
-
-      const hasActivity = recentActivity.includes(dateString)
-      dots.push(
-        <div
-          key={i}
-          className={`w-2 h-2 rounded-full ${hasActivity ? "bg-green-500" : "bg-gray-200"}`}
-          title={`${date.toLocaleDateString()}: ${hasActivity ? "Active" : "No activity"}`}
-        />,
-      )
+  const getRankColor = (rank: number) => {
+    switch (rank) {
+      case 1:
+        return "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200"
+      case 2:
+        return "bg-gradient-to-r from-gray-50 to-slate-50 border-gray-200"
+      case 3:
+        return "bg-gradient-to-r from-amber-50 to-yellow-50 border-amber-200"
+      default:
+        return "bg-white border-gray-200"
     }
-
-    return <div className="flex gap-1">{dots}</div>
   }
 
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin mr-2" />
-          <span>Loading leaderboard...</span>
-        </CardContent>
-      </Card>
-    )
+  const getStreakDays = (streak: number) => {
+    const days = []
+    for (let i = 0; i < Math.min(streak, 7); i++) {
+      days.push(<div key={i} className="w-2 h-2 rounded-full bg-green-500" title={`Day ${i + 1}`} />)
+    }
+    return days
   }
 
-  if (error) {
-    return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <p className="text-red-500 mb-4">{error}</p>
-          <button onClick={fetchLeaderboard} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-            Retry
-          </button>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (!data || data.leaderboard.length === 0) {
+  if (isLoading) {
     return (
       <Card>
         <CardHeader>
@@ -142,141 +112,149 @@ export function RealLeaderboard() {
             <Users className="h-5 w-5" />
             Community Leaderboard
           </CardTitle>
-          <CardDescription>Track community wellness contributions</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No community members yet</p>
-            <p className="text-sm text-muted-foreground mt-2">Be the first to join and start your wellness journey!</p>
+        <CardContent className="flex items-center justify-center p-8">
+          <div className="text-center">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">Loading leaderboard...</p>
           </div>
         </CardContent>
       </Card>
     )
   }
 
-  const { leaderboard, stats } = data
-  const maxPoints = leaderboard[0]?.totalPoints || 1
-
   return (
     <div className="space-y-6">
-      {/* Community Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-500" />
-              <div>
-                <p className="text-2xl font-bold">{stats.totalUsers}</p>
-                <p className="text-xs text-muted-foreground">Total Users</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Heart className="h-4 w-4 text-green-500" />
-              <div>
-                <p className="text-2xl font-bold">{stats.totalSelfCarePoints.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">Self-CARE Points</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-purple-500" />
-              <div>
-                <p className="text-2xl font-bold">{stats.totalCommunityPoints.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">Community Points</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-orange-500" />
-              <div>
-                <p className="text-2xl font-bold">{stats.averagePointsPerUser}</p>
-                <p className="text-xs text-muted-foreground">Avg per User</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Stats Overview */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4 text-center">
+              <Users className="h-6 w-6 mx-auto mb-2 text-blue-500" />
+              <div className="text-2xl font-bold">{stats.totalUsers}</div>
+              <div className="text-xs text-muted-foreground">Active Users</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <Heart className="h-6 w-6 mx-auto mb-2 text-green-500" />
+              <div className="text-2xl font-bold">{stats.totalSelfCarePoints}</div>
+              <div className="text-xs text-muted-foreground">Self-CARE</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <Target className="h-6 w-6 mx-auto mb-2 text-purple-500" />
+              <div className="text-2xl font-bold">{stats.totalObjectivePoints}</div>
+              <div className="text-xs text-muted-foreground">Community</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <Trophy className="h-6 w-6 mx-auto mb-2 text-orange-500" />
+              <div className="text-2xl font-bold">{stats.totalPoints}</div>
+              <div className="text-xs text-muted-foreground">Total Points</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Leaderboard */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Trophy className="h-5 w-5" />
-            Community Leaderboard
-          </CardTitle>
-          <CardDescription>Top performers in our wellness community</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-yellow-500" />
+                Community Leaderboard
+              </CardTitle>
+              <CardDescription>Top performers in the GOOD CARE community</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => loadLeaderboard(true)} disabled={isRefreshing}>
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {leaderboard.map((user) => (
-              <div
-                key={user.id}
-                className={`flex items-center gap-4 p-4 rounded-lg border ${
-                  user.rank <= 3 ? "bg-gradient-to-r from-yellow-50 to-orange-50" : "bg-gray-50"
-                }`}
-              >
-                {/* Rank */}
-                <div className="flex-shrink-0 w-8 flex justify-center">{getRankIcon(user.rank)}</div>
+          {leaderboard.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="font-semibold mb-2">No rankings yet</h3>
+              <p className="text-muted-foreground">Be the first to check in and start earning CARE Points!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {leaderboard.map((entry) => (
+                <div
+                  key={entry.userId}
+                  className={`p-4 rounded-lg border-2 ${getRankColor(entry.rank)} ${
+                    entry.userId === currentUserId ? "ring-2 ring-blue-500" : ""
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-center w-8 h-8">{getRankIcon(entry.rank)}</div>
+                      <div>
+                        <p className="font-medium">
+                          @{entry.username}
+                          {entry.userId === currentUserId && (
+                            <Badge variant="secondary" className="ml-2 text-xs">
+                              You
+                            </Badge>
+                          )}
+                        </p>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>🔥 {entry.currentStreak} current</span>
+                          <span>•</span>
+                          <span>🏆 {entry.longestStreak} longest</span>
+                        </div>
 
-                {/* Avatar */}
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
-                  <AvatarFallback>{user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
+                        {/* Streak Visualization */}
+                        {entry.currentStreak > 0 && (
+                          <div className="flex items-center gap-1 mt-2">
+                            <div className="flex gap-1">{getStreakDays(entry.currentStreak)}</div>
+                            {entry.currentStreak > 7 && (
+                              <span className="text-xs text-muted-foreground">+{entry.currentStreak - 7}</span>
+                            )}
+                          </div>
+                        )}
 
-                {/* User Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="font-medium truncate">{user.username}</p>
-                    {user.currentStreak > 0 && (
-                      <Badge variant="secondary" className="text-xs">
-                        {user.currentStreak} day streak
-                      </Badge>
-                    )}
-                  </div>
-
-                  {/* Points Breakdown */}
-                  <div className="flex items-center gap-4 text-sm">
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                      <Heart className="h-3 w-3 mr-1" />
-                      {user.selfCarePoints} Self-CARE
-                    </Badge>
-                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                      <Target className="h-3 w-3 mr-1" />
-                      {user.communityPoints} Community
-                    </Badge>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="mt-2">
-                    <Progress value={(user.totalPoints / maxPoints) * 100} className="h-2" />
+                        {/* Recent Objectives */}
+                        {entry.objectives && entry.objectives.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {entry.objectives.slice(0, 2).map((objective, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">
+                                {objective.title} (+{objective.points})
+                              </Badge>
+                            ))}
+                            {entry.objectives.length > 2 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{entry.objectives.length - 2} more
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-lg">{entry.totalPoints}</p>
+                      <p className="text-xs text-muted-foreground mb-1">Total CARE Points</p>
+                      <div className="flex flex-col gap-1 text-xs">
+                        <div className="flex items-center gap-1 text-green-600">
+                          <Heart className="h-3 w-3" />
+                          <span>{entry.selfCarePoints} Self</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-blue-600">
+                          <Target className="h-3 w-3" />
+                          <span>{entry.careObjectivePoints} Objective</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Activity & Total Points */}
-                <div className="flex-shrink-0 text-right">
-                  <div className="text-lg font-bold text-primary">{user.totalPoints.toLocaleString()}</div>
-                  <div className="text-xs text-muted-foreground mb-2">{user.totalCheckins} check-ins</div>
-                  {/* Activity dots for last 7 days */}
-                  <div className="flex justify-end">{getActivityDots(user.recentActivity, user.currentStreak)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,83 +1,76 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
+    const status = searchParams.get("status") || "all"
 
     let query = supabase.from("care_objectives").select("*")
 
     if (userId) {
-      query = query.eq("assigned_to", userId)
+      query = query.eq("user_id", userId)
     }
 
-    const { data: objectives, error } = await query.order("created_at", { ascending: false })
+    if (status !== "all") {
+      query = query.eq("status", status)
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false })
 
     if (error) {
-      console.error("Error fetching objectives:", error)
-      return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
+      throw error
     }
 
-    return NextResponse.json({ objectives: objectives || [] })
+    return NextResponse.json({
+      success: true,
+      objectives: data || [],
+    })
   } catch (error) {
-    console.error("Objectives API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error fetching objectives:", error)
+    return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
   }
 }
 
-export async function PATCH(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { objectiveId, status, evidence_url, assigned_to } = body
+    const { userId, username, walletAddress, objectiveType, title, description, points, category, evidenceUrl } = body
 
-    if (!objectiveId) {
-      return NextResponse.json({ error: "Objective ID is required" }, { status: 400 })
-    }
-
-    const updates: any = {}
-    const now = new Date().toISOString()
-
-    if (status) {
-      updates.status = status
-
-      if (status === "assigned" && assigned_to) {
-        updates.assigned_to = assigned_to
-        updates.assigned_at = now
-      } else if (status === "active") {
-        updates.started_at = now
-      } else if (status === "completed") {
-        updates.completed_at = now
-      } else if (status === "verified") {
-        updates.verified_at = now
-      }
-    }
-
-    if (evidence_url) {
-      updates.evidence_url = evidence_url
+    if (!userId || !username || !title || !points) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
     const { data, error } = await supabase
       .from("care_objectives")
-      .update(updates)
-      .eq("id", objectiveId)
+      .insert({
+        user_id: userId,
+        username,
+        wallet_address: walletAddress,
+        objective_type: objectiveType || "community",
+        title,
+        description,
+        points,
+        category: category || "general",
+        evidence_url: evidenceUrl,
+        status: "pending",
+      })
       .select()
       .single()
 
     if (error) {
-      console.error("Error updating objective:", error)
-      return NextResponse.json({ error: "Failed to update objective" }, { status: 500 })
+      throw error
     }
 
     return NextResponse.json({
       success: true,
       objective: data,
-      message: "Objective updated successfully",
     })
   } catch (error) {
-    console.error("Objectives PATCH API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error creating objective:", error)
+    return NextResponse.json({ error: "Failed to create objective" }, { status: 500 })
   }
 }

@@ -1,198 +1,132 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import { ethers } from "ethers"
-import { CHAIN_CONFIG } from "@/lib/blockchain-config"
+import type React from "react"
+import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit"
+import { WagmiProvider } from "wagmi"
+import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
+import { defineChain } from "viem"
+import { metaMask, walletConnect, coinbaseWallet } from "wagmi/connectors"
 
-interface WalletContextType {
-  account: string | null
-  isConnected: boolean
-  isConnecting: boolean
-  balance: string
-  connect: () => Promise<void>
-  disconnect: () => void
-  switchNetwork: () => Promise<void>
-  sendTransaction: (to: string, amount: string) => Promise<string>
-}
+// Define GOOD CARE Network chain
+const goodCareNetwork = defineChain({
+  id: 741741,
+  name: "GOOD CARE Network",
+  nativeCurrency: {
+    decimals: 18,
+    name: "CARE",
+    symbol: "CARE",
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://subnets.avax.network/goodcare/mainnet/rpc"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "GOOD CARE Explorer",
+      url: "https://subnets.avax.network/goodcare",
+    },
+  },
+})
 
-const WalletContext = createContext<WalletContextType | undefined>(undefined)
+// Configure wagmi with specific connectors for mobile
+const config = getDefaultConfig({
+  appName: "GOOD CARE Network",
+  projectId: "96ac3be93570659af072073d3e77c2b6",
+  chains: [goodCareNetwork],
+  connectors: [
+    metaMask({
+      dappMetadata: {
+        name: "GOOD CARE Network",
+        url: "https://goodonavax.vercel.app",
+      },
+    }),
+    coinbaseWallet({
+      appName: "GOOD CARE Network",
+      appLogoUrl: "https://goodonavax.vercel.app/placeholder-logo.png",
+    }),
+    walletConnect({
+      projectId: "96ac3be93570659af072073d3e77c2b6",
+      metadata: {
+        name: "GOOD CARE Network",
+        description: "Your daily wellness companion",
+        url: "https://goodonavax.vercel.app",
+        icons: ["https://goodonavax.vercel.app/placeholder-logo.png"],
+      },
+    }),
+  ],
+  ssr: true,
+})
 
-export function useWallet() {
-  const context = useContext(WalletContext)
-  if (context === undefined) {
-    throw new Error("useWallet must be used within a WalletProvider")
-  }
-  return context
-}
+// Create query client
+const queryClient = new QueryClient()
 
 interface WalletProviderProps {
-  children: ReactNode
+  children: React.ReactNode
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
-  const [account, setAccount] = useState<string | null>(null)
-  const [isConnected, setIsConnected] = useState(false)
-  const [isConnecting, setIsConnecting] = useState(false)
-  const [balance, setBalance] = useState("0.0")
+  return (
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider
+          modalSize="compact"
+          theme={{
+            lightMode: {
+              colors: {
+                accentColor: "#10b981",
+                accentColorForeground: "white",
+                actionButtonBorder: "rgba(0, 0, 0, 0.04)",
+                actionButtonBorderMobile: "rgba(0, 0, 0, 0.06)",
+                actionButtonSecondaryBackground: "rgba(0, 0, 0, 0.06)",
+                closeButton: "rgba(60, 66, 66, 0.8)",
+                closeButtonBackground: "rgba(0, 0, 0, 0.06)",
+                connectButtonBackground: "#10b981",
+                connectButtonBackgroundError: "#FF494A",
+                connectButtonInnerBackground: "linear-gradient(0deg, rgba(0, 0, 0, 0.03), rgba(0, 0, 0, 0.06))",
+                connectButtonText: "white",
+                connectButtonTextError: "white",
+                connectionIndicator: "#30E000",
+                downloadBottomCardBackground:
+                  "linear-gradient(126deg, rgba(255, 255, 255, 0) 9.49%, rgba(171, 171, 171, 0.04) 71.04%), #FFFFFF",
+                downloadTopCardBackground:
+                  "linear-gradient(126deg, rgba(171, 171, 171, 0.2) 9.49%, rgba(255, 255, 255, 0) 71.04%), #FFFFFF",
+                error: "#FF494A",
+                generalBorder: "rgba(0, 0, 0, 0.06)",
+                generalBorderDim: "rgba(0, 0, 0, 0.03)",
+                menuItemBackground: "rgba(60, 66, 66, 0.1)",
+                modalBackdrop: "rgba(0, 0, 0, 0.3)",
+                modalBackground: "white",
+                modalBorder: "rgba(0, 0, 0, 0.06)",
+                modalText: "#25292E",
+                modalTextDim: "rgba(60, 66, 66, 0.3)",
+                modalTextSecondary: "rgba(60, 66, 66, 0.6)",
+                profileAction: "white",
+                profileActionHover: "rgba(255, 255, 255, 0.5)",
+                profileForeground: "rgba(60, 66, 66, 0.06)",
+                selectedOptionBorder: "rgba(60, 66, 66, 0.1)",
+                standby: "#FFD641",
+              },
+            },
+          }}
+        >
+          {children}
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  )
+}
 
-  useEffect(() => {
-    checkConnection()
+// Export for backward compatibility
+export { WalletProvider as WalletProviderWrapper }
 
-    if (typeof window !== "undefined" && window.ethereum) {
-      window.ethereum.on("accountsChanged", handleAccountsChanged)
-      window.ethereum.on("chainChanged", handleChainChanged)
-
-      return () => {
-        window.ethereum?.removeListener("accountsChanged", handleAccountsChanged)
-        window.ethereum?.removeListener("chainChanged", handleChainChanged)
-      }
-    }
-  }, [])
-
-  const checkConnection = async () => {
-    try {
-      if (typeof window !== "undefined" && window.ethereum) {
-        const accounts = await window.ethereum.request({ method: "eth_accounts" })
-        if (accounts.length > 0) {
-          setAccount(accounts[0])
-          setIsConnected(true)
-          await updateBalance(accounts[0])
-        }
-      }
-    } catch (error) {
-      console.error("Error checking connection:", error)
-    }
+// Custom hook for backward compatibility
+export function useWallet() {
+  return {
+    publicKey: null,
+    connected: false,
+    connect: async () => {},
+    disconnect: () => {},
+    wallet: null,
   }
-
-  const handleAccountsChanged = (accounts: string[]) => {
-    if (accounts.length === 0) {
-      disconnect()
-    } else {
-      setAccount(accounts[0])
-      updateBalance(accounts[0])
-    }
-  }
-
-  const handleChainChanged = () => {
-    window.location.reload()
-  }
-
-  const updateBalance = async (address: string) => {
-    try {
-      if (typeof window !== "undefined" && window.ethereum) {
-        const provider = new ethers.BrowserProvider(window.ethereum)
-        const balance = await provider.getBalance(address)
-        setBalance(ethers.formatEther(balance))
-      }
-    } catch (error) {
-      console.error("Error updating balance:", error)
-    }
-  }
-
-  const connect = async () => {
-    if (typeof window === "undefined" || !window.ethereum) {
-      alert("Please install MetaMask or another Web3 wallet")
-      return
-    }
-
-    setIsConnecting(true)
-
-    try {
-      // Request account access
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      })
-
-      if (accounts.length > 0) {
-        setAccount(accounts[0])
-        setIsConnected(true)
-        await updateBalance(accounts[0])
-
-        // Try to switch to GOOD CARE network
-        await switchNetwork()
-      }
-    } catch (error: any) {
-      console.error("Error connecting wallet:", error)
-      if (error.code === 4001) {
-        alert("Please connect your wallet to continue")
-      } else {
-        alert("Failed to connect wallet. Please try again.")
-      }
-    } finally {
-      setIsConnecting(false)
-    }
-  }
-
-  const disconnect = () => {
-    setAccount(null)
-    setIsConnected(false)
-    setBalance("0.0")
-  }
-
-  const switchNetwork = async () => {
-    if (typeof window === "undefined" || !window.ethereum) {
-      throw new Error("No wallet found")
-    }
-
-    try {
-      // Try to switch to the GOOD CARE network
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: CHAIN_CONFIG.chainId }],
-      })
-    } catch (switchError: any) {
-      // If the network doesn't exist, add it
-      if (switchError.code === 4902) {
-        try {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [CHAIN_CONFIG],
-          })
-        } catch (addError) {
-          console.error("Error adding network:", addError)
-          throw new Error("Failed to add GOOD CARE network")
-        }
-      } else {
-        console.error("Error switching network:", switchError)
-        throw new Error("Failed to switch to GOOD CARE network")
-      }
-    }
-  }
-
-  const sendTransaction = async (to: string, amount: string): Promise<string> => {
-    if (!account || typeof window === "undefined" || !window.ethereum) {
-      throw new Error("Wallet not connected")
-    }
-
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-
-      const tx = await signer.sendTransaction({
-        to,
-        value: ethers.parseEther(amount),
-      })
-
-      await tx.wait()
-      await updateBalance(account)
-
-      return tx.hash
-    } catch (error) {
-      console.error("Error sending transaction:", error)
-      throw error
-    }
-  }
-
-  const value: WalletContextType = {
-    account,
-    isConnected,
-    isConnecting,
-    balance,
-    connect,
-    disconnect,
-    switchNetwork,
-    sendTransaction,
-  }
-
-  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
 }

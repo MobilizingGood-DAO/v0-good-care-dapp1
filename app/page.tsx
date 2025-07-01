@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useAccount, useConnect, useDisconnect } from "wagmi"
-import { Heart, Loader2, Globe, Shield, AlertCircle } from "lucide-react"
+import { Heart, Loader2, Globe, Shield } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import dynamic from "next/dynamic"
 
@@ -23,7 +23,7 @@ const GoodCareApp = dynamic(() => import("@/components/good-care-app"), {
 
 export default function HomePage() {
   const { address, isConnected, isConnecting } = useAccount()
-  const { connect, connectors, isPending, error } = useConnect()
+  const { connect, connectors, isPending } = useConnect()
   const { disconnect } = useDisconnect()
   const { toast } = useToast()
   const [mounted, setMounted] = useState(false)
@@ -31,17 +31,6 @@ export default function HomePage() {
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  // Show connection error if any
-  useEffect(() => {
-    if (error) {
-      toast({
-        title: "Connection Error",
-        description: error.message,
-        variant: "destructive",
-      })
-    }
-  }, [error, toast])
 
   // Don't render until mounted to avoid hydration issues
   if (!mounted) {
@@ -66,22 +55,11 @@ export default function HomePage() {
       case "metaMask":
         return { name: "MetaMask", icon: "🦊", description: "Browser extension & mobile app" }
       case "coinbaseWalletSDK":
-        return { name: "Coinbase Wallet", icon: "🔵", description: "Coinbase's secure wallet" }
+        return { name: "Core Wallet", icon: "⚡", description: "Avalanche's native wallet" }
+      case "walletConnect":
+        return { name: "WalletConnect", icon: "📱", description: "Connect any mobile wallet" }
       default:
         return { name: connectorId, icon: "🔗", description: "Connect wallet" }
-    }
-  }
-
-  const handleConnect = async (connector: any) => {
-    try {
-      await connect({ connector })
-    } catch (error) {
-      console.error("Connection error:", error)
-      toast({
-        title: "Connection failed",
-        description: "Please try again or check your wallet",
-        variant: "destructive",
-      })
     }
   }
 
@@ -105,14 +83,6 @@ export default function HomePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Connection Error */}
-            {error && (
-              <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-                <p className="text-sm text-red-700">{error.message}</p>
-              </div>
-            )}
-
             {/* Wallet Connection Buttons */}
             <div className="space-y-3">
               {connectors.map((connector) => {
@@ -120,7 +90,18 @@ export default function HomePage() {
                 return (
                   <Button
                     key={connector.id}
-                    onClick={() => handleConnect(connector)}
+                    onClick={() => {
+                      try {
+                        connect({ connector })
+                      } catch (error) {
+                        console.error("Connection error:", error)
+                        toast({
+                          title: "Connection failed",
+                          description: "Please try again",
+                          variant: "destructive",
+                        })
+                      }
+                    }}
                     disabled={isPending || isConnecting}
                     variant="outline"
                     className="w-full h-16 flex items-center justify-start gap-4 text-left"
@@ -159,7 +140,7 @@ export default function HomePage() {
             <div className="text-center pt-4 border-t">
               <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                 <Globe className="h-3 w-3" />
-                <span>GOOD CARE Network • Subnet 432201</span>
+                <span>GOOD CARE Network • Subnet 741741</span>
               </div>
             </div>
           </CardContent>
