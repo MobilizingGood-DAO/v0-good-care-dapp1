@@ -1,20 +1,34 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { supabase } from "@/lib/supabase"
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+interface UserPoints {
+  userId: string
+  username: string
+  walletAddress: string
+  avatar?: string
+  selfCarePoints: number
+  careObjectivePoints: number
+  totalPoints: number
+  currentStreak: number
+  longestStreak: number
+  level: number
+  totalCheckins: number
+  lastCheckin?: string
+}
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const limit = Number.parseInt(searchParams.get("limit") || "100")
 
-    // Get self-care points from user_stats
+    // Get self-care points from daily check-ins via user_stats
     const { data: userStatsData, error: statsError } = await supabase
       .from("users")
       .select(`
         id,
         username,
         wallet_address,
+        avatar,
         user_stats (
           total_points,
           current_streak,
@@ -28,44 +42,44 @@ export async function GET(request: NextRequest) {
 
     if (statsError) {
       console.error("Error fetching user stats:", statsError)
+      return NextResponse.json({ error: "Failed to fetch user stats" }, { status: 500 })
     }
 
-    // Get community CARE objective points
+    // Get CARE objective points
     const { data: objectiveData, error: objectiveError } = await supabase
       .from("care_objectives")
-      .select("user_id, username, points, title, category")
+      .select(`
+        user_id,
+        username,
+        points
+      `)
       .eq("status", "completed")
 
     if (objectiveError) {
-      console.error("Error fetching objective data:", objectiveError)
+      console.error("Error fetching objective points:", objectiveError)
+      // Don't fail if objectives table doesn't exist yet
     }
 
-    // Aggregate objective points by user_id
-    const objectivePointsByUser = new Map<string, { points: number; objectives: any[] }>()
+    // Aggregate objective points by user
+    const objectivePointsByUser = new Map<string, number>()
     if (objectiveData) {
       objectiveData.forEach((obj: any) => {
-        const current = objectivePointsByUser.get(obj.user_id) || { points: 0, objectives: [] }
-        current.points += obj.points || 0
-        current.objectives.push({
-          title: obj.title,
-          points: obj.points,
-          category: obj.category,
-        })
-        objectivePointsByUser.set(obj.user_id, current)
+        const currentPoints = objectivePointsByUser.get(obj.user_id) || 0
+        objectivePointsByUser.set(obj.user_id, currentPoints + obj.points)
       })
     }
 
     // Combine the data
-    const combinedData = (userStatsData || []).map((user: any) => {
+    const combinedData: UserPoints[] = (userStatsData || []).map((user: any) => {
       const selfCarePoints = user.user_stats?.total_points || 0
-      const objectiveData = objectivePointsByUser.get(user.id) || { points: 0, objectives: [] }
-      const careObjectivePoints = objectiveData.points
+      const careObjectivePoints = objectivePointsByUser.get(user.id) || 0
       const totalPoints = selfCarePoints + careObjectivePoints
 
       return {
         userId: user.id,
-        username: user.username || `User_${user.wallet_address?.slice(-6) || user.id.slice(-6)}`,
+        username: user.username || `User_${user.wallet_address.slice(-6)}`,
         walletAddress: user.wallet_address,
+        avatar: user.avatar,
         selfCarePoints,
         careObjectivePoints,
         totalPoints,
@@ -74,7 +88,6 @@ export async function GET(request: NextRequest) {
         level: user.user_stats?.level || 1,
         totalCheckins: user.user_stats?.total_checkins || 0,
         lastCheckin: user.user_stats?.last_checkin,
-        objectives: objectiveData.objectives,
       }
     })
 
@@ -87,18 +100,9 @@ export async function GET(request: NextRequest) {
         rank: index + 1,
       }))
 
-    // Calculate stats
-    const stats = {
-      totalUsers: sortedData.length,
-      totalSelfCarePoints: sortedData.reduce((sum, user) => sum + user.selfCarePoints, 0),
-      totalObjectivePoints: sortedData.reduce((sum, user) => sum + user.careObjectivePoints, 0),
-      totalPoints: sortedData.reduce((sum, user) => sum + user.totalPoints, 0),
-    }
-
     return NextResponse.json({
       success: true,
       leaderboard: sortedData,
-      stats,
     })
   } catch (error) {
     console.error("API Error:", error)

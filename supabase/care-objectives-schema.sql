@@ -1,73 +1,59 @@
 -- Create care_objectives table for community CARE points
 CREATE TABLE IF NOT EXISTS care_objectives (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id TEXT NOT NULL,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   username TEXT NOT NULL,
-  wallet_address TEXT,
-  objective_type TEXT NOT NULL DEFAULT 'community',
+  wallet_address TEXT NOT NULL,
+  objective_type TEXT NOT NULL, -- 'community_help', 'resource_share', 'mentorship', etc.
   title TEXT NOT NULL,
   description TEXT,
   points INTEGER NOT NULL DEFAULT 0,
-  category TEXT DEFAULT 'general',
-  evidence_url TEXT,
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'completed', 'rejected')),
+  status TEXT DEFAULT 'completed', -- 'pending', 'completed', 'verified'
+  evidence_url TEXT, -- Link to proof/evidence
+  verified_by UUID REFERENCES users(id), -- Admin/moderator who verified
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  approved_at TIMESTAMP WITH TIME ZONE,
-  completed_at TIMESTAMP WITH TIME ZONE
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_care_objectives_user_id ON care_objectives(user_id);
+CREATE INDEX IF NOT EXISTS idx_care_objectives_username ON care_objectives(username);
 CREATE INDEX IF NOT EXISTS idx_care_objectives_status ON care_objectives(status);
-CREATE INDEX IF NOT EXISTS idx_care_objectives_category ON care_objectives(category);
 CREATE INDEX IF NOT EXISTS idx_care_objectives_created_at ON care_objectives(created_at);
 
--- Enable RLS
+-- Create RLS policies
 ALTER TABLE care_objectives ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies
-CREATE POLICY "Users can view all completed objectives" ON care_objectives
+-- Users can view all completed objectives
+CREATE POLICY "Users can view completed objectives" ON care_objectives
   FOR SELECT USING (status = 'completed');
 
-CREATE POLICY "Users can insert their own objectives" ON care_objectives
-  FOR INSERT WITH CHECK (true);
+-- Users can insert their own objectives
+CREATE POLICY "Users can insert own objectives" ON care_objectives
+  FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
 
-CREATE POLICY "Users can update their own objectives" ON care_objectives
-  FOR UPDATE USING (user_id = current_setting('request.jwt.claims', true)::json->>'sub');
+-- Users can update their own pending objectives
+CREATE POLICY "Users can update own objectives" ON care_objectives
+  FOR UPDATE USING (auth.uid()::text = user_id::text);
 
--- Create public_gratitude table for shared gratitude
-CREATE TABLE IF NOT EXISTS public_gratitude (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  username TEXT NOT NULL,
-  gratitude TEXT NOT NULL,
-  mood TEXT,
-  likes INTEGER DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Create trigger to update updated_at
+CREATE OR REPLACE FUNCTION update_care_objectives_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- Enable RLS for public_gratitude
-ALTER TABLE public_gratitude ENABLE ROW LEVEL SECURITY;
+CREATE TRIGGER update_care_objectives_updated_at
+  BEFORE UPDATE ON care_objectives
+  FOR EACH ROW
+  EXECUTE FUNCTION update_care_objectives_updated_at();
 
--- RLS Policy for public_gratitude
-CREATE POLICY "Anyone can view public gratitude" ON public_gratitude
-  FOR SELECT USING (true);
-
-CREATE POLICY "Users can insert their own gratitude" ON public_gratitude
-  FOR INSERT WITH CHECK (true);
-
--- Add is_gratitude_public column to daily_checkins if it doesn't exist
-ALTER TABLE daily_checkins 
-ADD COLUMN IF NOT EXISTS is_gratitude_public BOOLEAN DEFAULT false;
-
--- Add resources_viewed column to daily_checkins if it doesn't exist
-ALTER TABLE daily_checkins 
-ADD COLUMN IF NOT EXISTS resources_viewed TEXT[] DEFAULT '{}';
-
--- Insert sample care objectives
-INSERT INTO care_objectives (user_id, username, objective_type, title, description, points, category, status) VALUES
-('demo_user_1', 'CareGiver_Alice', 'mentorship', 'Onboard 5 New Members', 'Help 5 new community members complete their first check-in', 100, 'mentorship', 'completed'),
-('demo_user_2', 'Wellness_Bob', 'content', 'Create Wellness Guide', 'Write comprehensive guide on daily wellness practices', 75, 'content', 'completed'),
-('demo_user_3', 'Helper_Carol', 'support', 'Community Support', 'Provide emotional support in community chat for 1 week', 50, 'support', 'completed'),
-('demo_user_1', 'CareGiver_Alice', 'event', 'Organize Meditation Session', 'Host weekly group meditation for community', 125, 'events', 'completed');
+-- Insert some sample data
+INSERT INTO care_objectives (user_id, username, wallet_address, objective_type, title, description, points, status) VALUES
+  ('550e8400-e29b-41d4-a716-446655440000', 'alice_cares', '0x1234...5678', 'community_help', 'Helped newcomer with wallet setup', 'Guided a new user through their first wallet connection and token claim', 50, 'completed'),
+  ('550e8400-e29b-41d4-a716-446655440001', 'bob_builder', '0x2345...6789', 'resource_share', 'Shared mental health resources', 'Created and shared a comprehensive guide on mindfulness practices', 75, 'completed'),
+  ('550e8400-e29b-41d4-a716-446655440002', 'charlie_mentor', '0x3456...7890', 'mentorship', 'Mentored 3 community members', 'Provided ongoing support and guidance to new community members', 100, 'completed'),
+  ('550e8400-e29b-41d4-a716-446655440000', 'alice_cares', '0x1234...5678', 'community_help', 'Organized community wellness event', 'Coordinated a virtual meditation session for 20+ participants', 125, 'completed'),
+  ('550e8400-e29b-41d4-a716-446655440001', 'bob_builder', '0x2345...6789', 'resource_share', 'Created educational content', 'Developed video tutorials on blockchain wellness applications', 90, 'completed');

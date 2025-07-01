@@ -1,9 +1,10 @@
-import { LocalCheckInService, MOOD_EMOJIS } from "./local-checkin-service"
+import { LocalCheckInService } from "./local-checkin-service"
 
 export interface EnhancedLeaderboardEntry {
   userId: string
   username: string
   walletAddress: string
+  avatar?: string
   selfCarePoints: number
   careObjectivePoints: number
   totalPoints: number
@@ -13,24 +14,18 @@ export interface EnhancedLeaderboardEntry {
   totalCheckins: number
   lastCheckin?: string
   rank: number
-  objectives: Array<{
-    title: string
-    points: number
-    category: string
-  }>
 }
 
 export interface CareObjective {
   id: string
   userId: string
   username: string
-  walletAddress?: string
+  walletAddress: string
   objectiveType: string
   title: string
   description?: string
   points: number
-  category: string
-  status: "pending" | "approved" | "completed" | "rejected"
+  status: "pending" | "completed" | "verified"
   evidenceUrl?: string
   createdAt: string
 }
@@ -71,7 +66,6 @@ export class HybridCommunityService {
         totalCheckins: entry.totalCheckins,
         lastCheckin: entry.lastCheckin,
         rank: index + 1,
-        objectives: [],
       }))
       .slice(0, limit)
   }
@@ -100,12 +94,11 @@ export class HybridCommunityService {
   static async submitObjective(objective: {
     userId: string
     username: string
-    walletAddress?: string
+    walletAddress: string
     objectiveType: string
     title: string
     description?: string
     points: number
-    category?: string
     evidenceUrl?: string
   }): Promise<{ success: boolean; objective?: CareObjective; error?: string }> {
     if (!this.isOnline()) {
@@ -143,7 +136,7 @@ export class HybridCommunityService {
     const objectives = await this.getUserObjectives(userId)
     const careObjectivePoints = objectives.reduce((sum, obj) => sum + obj.points, 0)
 
-    // Get self-care points from local storage
+    // Get self-care points from local storage or API
     const localStats = LocalCheckInService.getUserStats(userId)
     const selfCarePoints = localStats?.totalPoints || 0
 
@@ -157,62 +150,53 @@ export class HybridCommunityService {
   // Enhanced check-in with gratitude privacy option
   static async recordCheckIn(
     userId: string,
-    walletAddress: string,
-    emoji: keyof typeof MOOD_EMOJIS,
+    mood: number,
+    moodLabel: string,
     gratitudeNote?: string,
     isGratitudePublic = false,
-  ): Promise<{ success: boolean; points: number; newStreak: number; error?: string }> {
-    try {
-      // Try API first
-      const moodValue = MOOD_EMOJIS[emoji].value
-      const moodLabel = MOOD_EMOJIS[emoji].label
+    resourcesViewed: string[] = [],
+  ): Promise<{ success: boolean; checkIn?: any; newStats?: any; error?: string }> {
+    // Record locally first
+    const localResult = LocalCheckInService.recordCheckIn(userId, mood, moodLabel, gratitudeNote, resourcesViewed)
 
-      if (this.isOnline()) {
+    // Try to sync with Supabase if online
+    if (this.isOnline()) {
+      try {
         const response = await fetch("/api/community/checkin", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            walletAddress,
-            mood: moodValue,
+            userId,
+            mood,
             moodLabel,
             gratitudeNote,
             isGratitudePublic,
+            resourcesViewed,
           }),
         })
 
         const data = await response.json()
 
         if (data.success) {
-          // Also save to localStorage as backup
-          await LocalCheckInService.recordCheckIn(userId, emoji, gratitudeNote)
-
-          return {
-            success: true,
-            points: data.points || 0,
-            newStreak: data.streak || 1,
-          }
+          return { success: true, checkIn: data.checkIn, newStats: data.stats }
         }
+      } catch (error) {
+        console.error("Error syncing check-in:", error)
       }
-
-      // Fallback to localStorage
-      const localResult = await LocalCheckInService.recordCheckIn(userId, emoji, gratitudeNote)
-      return localResult
-    } catch (error) {
-      console.warn("API check-in failed, using localStorage:", error)
-      // Fallback to localStorage
-      return await LocalCheckInService.recordCheckIn(userId, emoji, gratitudeNote)
     }
+
+    return localResult
   }
 
-  // Subscribe to leaderboard updates (simplified without EventEmitter2)
+  // Subscribe to realtime leaderboard updates
   static subscribeToLeaderboard(callback: (leaderboard: EnhancedLeaderboardEntry[]) => void) {
     if (!this.isOnline()) {
       return { unsubscribe: () => {} }
     }
 
-    // Set up polling for updates
+    // Set up polling for now (could be replaced with WebSocket/SSE)
     const interval = setInterval(async () => {
       const leaderboard = await this.getEnhancedLeaderboard()
       callback(leaderboard)
@@ -220,24 +204,6 @@ export class HybridCommunityService {
 
     return {
       unsubscribe: () => clearInterval(interval),
-    }
-  }
-
-  // Helper method to seed demo data
-  static async seedDemoData(): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await fetch("/api/community/seed", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      })
-
-      const data = await response.json()
-      return { success: response.ok, error: data.error }
-    } catch (error) {
-      console.error("Error seeding demo data:", error)
-      return { success: false, error: "Network error" }
     }
   }
 }
