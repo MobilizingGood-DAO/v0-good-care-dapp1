@@ -6,50 +6,40 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { RefreshCw, Users, Heart, Target, TrendingUp, Wifi, WifiOff } from "lucide-react"
-import { hybridCommunityService } from "@/lib/hybrid-community-service"
-import type { LeaderboardData, LeaderboardUser } from "@/lib/hybrid-community-service"
+import { RefreshCw, Users, Trophy, TrendingUp, Wifi, WifiOff } from "lucide-react"
+import { hybridCommunityService, type LeaderboardData } from "@/lib/hybrid-community-service"
 
 export function RealLeaderboard() {
-  const [data, setData] = useState<LeaderboardData | null>(null)
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardData>({
+    users: [],
+    stats: { totalUsers: 0, totalPoints: 0, averagePoints: 0, activeToday: 0 },
+  })
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [isOnline, setIsOnline] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [syncStatus, setSyncStatus] = useState({ isOnline: true, queueLength: 0, lastSync: Date.now() })
 
-  useEffect(() => {
-    // Check online status
-    setIsOnline(navigator.onLine)
-
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOnline(false)
-
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [])
-
-  const fetchLeaderboard = async (showRefreshing = false) => {
+  const loadLeaderboard = async (showRefreshing = false) => {
     try {
       if (showRefreshing) setRefreshing(true)
       setError(null)
 
-      console.log("🏆 RealLeaderboard: Fetching data...")
-      const result = await hybridCommunityService.getLeaderboard()
+      console.log("🏆 Component: Loading leaderboard...")
+      const data = await hybridCommunityService.getLeaderboard()
 
-      if (result) {
-        console.log("✅ RealLeaderboard: Data received:", result)
-        setData(result)
-      } else {
-        console.log("⚠️ RealLeaderboard: No data received")
-        setError("No data available")
-      }
+      console.log("📊 Component: Received data:", {
+        userCount: data.users.length,
+        totalPoints: data.stats.totalPoints,
+        activeToday: data.stats.activeToday,
+      })
+
+      setLeaderboardData(data)
+
+      // Update sync status
+      const status = hybridCommunityService.getSyncStatus()
+      setSyncStatus(status)
     } catch (err) {
-      console.error("❌ RealLeaderboard: Error fetching data:", err)
+      console.error("❌ Component: Failed to load leaderboard:", err)
       setError(err instanceof Error ? err.message : "Failed to load leaderboard")
     } finally {
       setLoading(false)
@@ -58,11 +48,22 @@ export function RealLeaderboard() {
   }
 
   useEffect(() => {
-    fetchLeaderboard()
+    loadLeaderboard()
+
+    // Refresh every 2 minutes
+    const interval = setInterval(
+      () => {
+        loadLeaderboard()
+      },
+      2 * 60 * 1000,
+    )
+
+    return () => clearInterval(interval)
   }, [])
 
   const handleRefresh = () => {
-    fetchLeaderboard(true)
+    hybridCommunityService.clearCache()
+    loadLeaderboard(true)
   }
 
   const getRankIcon = (rank: number) => {
@@ -82,37 +83,32 @@ export function RealLeaderboard() {
     return maxPoints > 0 ? (points / maxPoints) * 100 : 0
   }
 
+  const maxPoints = leaderboardData.users.length > 0 ? leaderboardData.users[0].totalPoints : 1
+
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Community Leaderboard</h2>
-          <div className="flex items-center gap-2">
-            {isOnline ? <Wifi className="h-4 w-4 text-green-500" /> : <WifiOff className="h-4 w-4 text-red-500" />}
-            <RefreshCw className="h-4 w-4 animate-spin" />
-          </div>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
             <Card key={i}>
               <CardContent className="p-6">
-                <div className="h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
-                <div className="h-8 bg-gray-200 rounded animate-pulse"></div>
+                <div className="animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
-
         <Card>
           <CardContent className="p-6">
             <div className="space-y-4">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-gray-200 rounded-full animate-pulse"></div>
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="animate-pulse flex items-center space-x-4">
+                  <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
                   <div className="flex-1">
-                    <div className="h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
-                    <div className="h-3 bg-gray-200 rounded animate-pulse w-1/2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-1/4 mb-2"></div>
+                    <div className="h-2 bg-gray-200 rounded w-full"></div>
                   </div>
                 </div>
               ))}
@@ -123,74 +119,36 @@ export function RealLeaderboard() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Community Leaderboard</h2>
-          <div className="flex items-center gap-2">
-            {isOnline ? <Wifi className="h-4 w-4 text-green-500" /> : <WifiOff className="h-4 w-4 text-red-500" />}
-            <Button onClick={handleRefresh} size="sm" disabled={refreshing}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-              Retry
-            </Button>
-          </div>
-        </div>
-
-        <Card>
-          <CardContent className="p-6 text-center">
-            <div className="text-red-500 mb-4">
-              <Target className="h-12 w-12 mx-auto mb-2" />
-              <p className="font-medium">Unable to load leaderboard</p>
-              <p className="text-sm text-gray-500 mt-1">{error}</p>
-            </div>
-            <Button onClick={handleRefresh} disabled={refreshing}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  const maxPoints = data?.leaderboard?.[0]?.total_points || 1
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Community Leaderboard</h2>
-        <div className="flex items-center gap-2">
-          {isOnline ? <Wifi className="h-4 w-4 text-green-500" /> : <WifiOff className="h-4 w-4 text-red-500" />}
-          <Button onClick={handleRefresh} size="sm" disabled={refreshing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      {/* Debug Info */}
+      {/* Debug Info (Development Only) */}
       {process.env.NODE_ENV === "development" && (
         <Card className="border-blue-200 bg-blue-50">
           <CardContent className="p-4">
-            <p className="text-sm text-blue-700">
-              <strong>Debug:</strong> Online: {isOnline ? "Yes" : "No"} | Users: {data?.leaderboard?.length || 0} |
-              Success: {data?.success ? "Yes" : "No"}
-            </p>
+            <div className="flex items-center gap-2 text-sm">
+              {syncStatus.isOnline ? (
+                <Wifi className="h-4 w-4 text-green-600" />
+              ) : (
+                <WifiOff className="h-4 w-4 text-red-600" />
+              )}
+              <span>
+                Status: {syncStatus.isOnline ? "Online" : "Offline"} | Queue: {syncStatus.queueLength} | Users:{" "}
+                {leaderboardData.users.length} | Points: {leaderboardData.stats.totalPoints}
+              </span>
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* Community Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-500" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Users</p>
-                <p className="text-2xl font-bold">{data?.stats?.totalUsers || 0}</p>
+            <div className="flex items-center">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <div className="ml-2">
+                <p className="text-sm font-medium leading-none">Total Users</p>
+                <p className="text-2xl font-bold">{leaderboardData.stats.totalUsers}</p>
               </div>
             </div>
           </CardContent>
@@ -198,11 +156,11 @@ export function RealLeaderboard() {
 
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-2">
-              <Heart className="h-4 w-4 text-pink-500" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">Self-CARE Points</p>
-                <p className="text-2xl font-bold">{data?.stats?.totalSelfCarePoints || 0}</p>
+            <div className="flex items-center">
+              <Trophy className="h-4 w-4 text-muted-foreground" />
+              <div className="ml-2">
+                <p className="text-sm font-medium leading-none">Total Points</p>
+                <p className="text-2xl font-bold">{leaderboardData.stats.totalPoints.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
@@ -210,11 +168,11 @@ export function RealLeaderboard() {
 
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-green-500" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">Community Points</p>
-                <p className="text-2xl font-bold">{data?.stats?.totalCommunityPoints || 0}</p>
+            <div className="flex items-center">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <div className="ml-2">
+                <p className="text-sm font-medium leading-none">Average Points</p>
+                <p className="text-2xl font-bold">{leaderboardData.stats.averagePoints}</p>
               </div>
             </div>
           </CardContent>
@@ -222,11 +180,11 @@ export function RealLeaderboard() {
 
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-purple-500" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">Average Points</p>
-                <p className="text-2xl font-bold">{data?.stats?.averagePointsPerUser || 0}</p>
+            <div className="flex items-center">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <div className="ml-2">
+                <p className="text-sm font-medium leading-none">Active Today</p>
+                <p className="text-2xl font-bold">{leaderboardData.stats.activeToday}</p>
               </div>
             </div>
           </CardContent>
@@ -235,29 +193,44 @@ export function RealLeaderboard() {
 
       {/* Leaderboard */}
       <Card>
-        <CardHeader>
-          <CardTitle>Top Contributors</CardTitle>
-          <CardDescription>Community members ranked by their total CARE points</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Community Leaderboard</CardTitle>
+            <CardDescription>Top contributors in the GOOD CARE community</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </CardHeader>
         <CardContent>
-          {!data?.leaderboard || data.leaderboard.length === 0 ? (
+          {error ? (
             <div className="text-center py-8">
-              <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">No users found</p>
-              <p className="text-sm text-gray-400 mt-1">Be the first to join the community!</p>
+              <p className="text-muted-foreground mb-4">Failed to load leaderboard</p>
+              <p className="text-sm text-red-600 mb-4">{error}</p>
+              <Button onClick={handleRefresh} variant="outline">
+                Try Again
+              </Button>
+            </div>
+          ) : leaderboardData.users.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground mb-4">No users found</p>
+              <p className="text-sm">Be the first to join the community!</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {data.leaderboard.map((user: LeaderboardUser) => (
+              {leaderboardData.users.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center gap-4 p-4 rounded-lg border hover:bg-gray-50 transition-colors"
+                  className="flex items-center space-x-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
                 >
                   {/* Rank */}
-                  <div className="text-2xl font-bold w-12 text-center">{getRankIcon(user.rank)}</div>
+                  <div className="flex-shrink-0 w-12 text-center">
+                    <span className="text-lg font-bold">{getRankIcon(user.rank)}</span>
+                  </div>
 
                   {/* Avatar */}
-                  <Avatar className="h-12 w-12">
+                  <Avatar className="h-10 w-10">
                     <AvatarImage src={user.avatar_url || "/placeholder.svg"} alt={user.username} />
                     <AvatarFallback>{user.username.slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
@@ -265,39 +238,38 @@ export function RealLeaderboard() {
                   {/* User Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold truncate">{user.username}</h3>
-                      {user.current_streak > 0 && (
+                      <p className="text-sm font-medium truncate">{user.username}</p>
+                      {user.streak > 0 && (
                         <Badge variant="secondary" className="text-xs">
-                          {user.current_streak} day streak
+                          🔥 {user.streak}
                         </Badge>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                      <span>Self-CARE: {user.self_care_points}</span>
-                      <span>Community: {user.community_points}</span>
-                      <span className="font-medium">Total: {user.total_points}</span>
+                    {/* Points Breakdown */}
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
+                      <span>Self-CARE: {user.selfCarePoints}</span>
+                      <span>Community: {user.communityPoints}</span>
+                      <span className="font-medium">Total: {user.totalPoints}</span>
                     </div>
 
                     {/* Progress Bar */}
-                    <Progress value={getProgressPercentage(user.total_points, maxPoints)} className="h-2" />
+                    <Progress value={getProgressPercentage(user.totalPoints, maxPoints)} className="h-2" />
                   </div>
 
                   {/* Recent Activity */}
-                  <div className="hidden sm:flex items-center gap-1">
-                    {user.recent_activity.map((activity, index) => (
-                      <div
-                        key={index}
-                        className={`w-2 h-2 rounded-full ${activity === "✅" ? "bg-green-500" : "bg-gray-200"}`}
-                        title={`Day ${index + 1}: ${activity === "✅" ? "Active" : "Inactive"}`}
-                      />
-                    ))}
+                  <div className="flex-shrink-0">
+                    <div className="flex gap-1">
+                      {user.recentActivity.map((active, index) => (
+                        <div
+                          key={index}
+                          className={`w-2 h-2 rounded-full ${active ? "bg-green-500" : "bg-gray-200"}`}
+                          title={`${7 - index} days ago`}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 text-center">7 days</p>
                   </div>
-
-                  {/* Total Points Badge */}
-                  <Badge variant="outline" className="font-mono">
-                    {user.total_points}
-                  </Badge>
                 </div>
               ))}
             </div>
