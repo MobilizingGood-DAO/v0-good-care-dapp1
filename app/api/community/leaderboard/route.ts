@@ -1,15 +1,17 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
-export async function GET(request: NextRequest) {
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
+export async function GET() {
   try {
-    console.log("🏆 Fetching enhanced leaderboard with dual points...")
+    console.log("🏆 Fetching leaderboard data...")
 
-    // Get all users with their profiles
+    // Get all user profiles
     const { data: profiles, error: profilesError } = await supabase
       .from("user_profiles")
       .select("*")
-      .order("created_at", { ascending: true })
+      .order("total_points", { ascending: false })
 
     if (profilesError) {
       console.error("❌ Error fetching profiles:", profilesError)
@@ -17,84 +19,79 @@ export async function GET(request: NextRequest) {
     }
 
     if (!profiles || profiles.length === 0) {
-      console.log("📝 No profiles found, returning empty leaderboard")
+      console.log("📝 No profiles found")
       return NextResponse.json({
         leaderboard: [],
         stats: {
           totalUsers: 0,
           totalSelfCarePoints: 0,
           totalCommunityPoints: 0,
-          averagePoints: 0,
+          totalPoints: 0,
+          averagePointsPerUser: 0,
+          activeUsers: 0,
         },
       })
     }
 
-    // Get self-care points from check-ins
-    const { data: checkInStats, error: checkInError } = await supabase.from("user_checkins").select("user_id, points")
-
-    if (checkInError) {
-      console.error("❌ Error fetching check-in stats:", checkInError)
-    }
-
-    // Get community points from verified objectives
-    const { data: objectiveStats, error: objectiveError } = await supabase
-      .from("user_objectives")
-      .select(`
-        user_id,
-        care_objectives!inner(points)
-      `)
+    // Get community points for each user from verified objectives
+    const { data: objectives, error: objectivesError } = await supabase
+      .from("care_objectives")
+      .select("assigned_to, points")
       .eq("status", "verified")
 
-    if (objectiveError) {
-      console.error("❌ Error fetching objective stats:", objectiveError)
+    if (objectivesError) {
+      console.error("❌ Error fetching objectives:", objectivesError)
     }
 
-    // Calculate points for each user
-    const userPointsMap = new Map()
-
-    // Initialize all users with zero points
-    profiles.forEach((profile) => {
-      userPointsMap.set(profile.user_id, {
-        user_id: profile.user_id,
-        username: profile.username,
-        avatar_url: profile.avatar_url,
-        selfCarePoints: 0,
-        communityPoints: 0,
-        totalPoints: 0,
-        checkInCount: 0,
-        objectiveCount: 0,
-        lastActivity: profile.last_checkin_date,
-      })
-    })
-
-    // Add self-care points from check-ins
-    if (checkInStats) {
-      checkInStats.forEach((checkin) => {
-        const user = userPointsMap.get(checkin.user_id)
-        if (user) {
-          user.selfCarePoints += checkin.points || 0
-          user.checkInCount += 1
+    // Calculate community points per user
+    const communityPointsMap = new Map<string, number>()
+    if (objectives) {
+      objectives.forEach((obj) => {
+        if (obj.assigned_to) {
+          const current = communityPointsMap.get(obj.assigned_to) || 0
+          communityPointsMap.set(obj.assigned_to, current + obj.points)
         }
       })
     }
 
-    // Add community points from verified objectives
-    if (objectiveStats) {
-      objectiveStats.forEach((objective) => {
-        const user = userPointsMap.get(objective.user_id)
-        if (user && objective.care_objectives) {
-          user.communityPoints += objective.care_objectives.points || 0
-          user.objectiveCount += 1
-        }
-      })
-    }
+    // Get recent activity for each user (last 7 days)
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-    // Calculate total points and create leaderboard
-    const leaderboard = Array.from(userPointsMap.values())
-      .map((user) => ({
-        ...user,
-        totalPoints: user.selfCarePoints + user.communityPoints,
-      }))
+    const leaderboardData = await Promise.all(
+      profiles.map(async (profile) => {
+        // Get recent checkins for activity dots
+        const { data: recentCheckins } = await supabase
+          .from("daily_checkins")
+          .select("checkin_date")
+          .eq("user_id", profile.user_id)
+          .gte("checkin_date", sevenDaysAgo.toISOString().split("T")[0])
+          .order("checkin_date", { ascending: false })
+
+        const recentActivity = recentCheckins?.map((c) => c.checkin_date) || []
+        const communityPoints = communityPointsMap.get(profile.user_id) || 0
+        const selfCarePoints = profile.total_points || 0
+        const totalPoints = selfCarePoints + communityPoints
+
+        return {
+          id: profile.id,
+          user_id: profile.user_id,
+          username: profile.username || `User${profile.wallet_address?.slice(-4)}`,
+          wallet_address: profile.wallet_address,
+          avatar_url: profile.avatar_url,
+          selfCarePoints,
+          communityPoints,
+          totalPoints,
+          totalCheckins: profile.total_checkins || 0,
+          currentStreak: profile.current_streak || 0,
+          recentActivity,
+          joinedAt: profile.created_at,
+        }
+      }),
+    )
+
+    // Sort by total points and assign ranks
+    const sortedLeaderboard = leaderboardData
       .sort((a, b) => b.totalPoints - a.totalPoints)
       .map((user, index) => ({
         ...user,
@@ -102,25 +99,30 @@ export async function GET(request: NextRequest) {
       }))
 
     // Calculate stats
+    const totalUsers = profiles.length
+    const totalSelfCarePoints = leaderboardData.reduce((sum, user) => sum + user.selfCarePoints, 0)
+    const totalCommunityPoints = leaderboardData.reduce((sum, user) => sum + user.communityPoints, 0)
+    const totalPoints = totalSelfCarePoints + totalCommunityPoints
+    const averagePointsPerUser = totalUsers > 0 ? Math.round(totalPoints / totalUsers) : 0
+    const activeUsers = leaderboardData.filter((user) => user.currentStreak > 0).length
+
     const stats = {
-      totalUsers: leaderboard.length,
-      totalSelfCarePoints: leaderboard.reduce((sum, user) => sum + user.selfCarePoints, 0),
-      totalCommunityPoints: leaderboard.reduce((sum, user) => sum + user.communityPoints, 0),
-      averagePoints:
-        leaderboard.length > 0
-          ? Math.round(leaderboard.reduce((sum, user) => sum + user.totalPoints, 0) / leaderboard.length)
-          : 0,
+      totalUsers,
+      totalSelfCarePoints,
+      totalCommunityPoints,
+      totalPoints,
+      averagePointsPerUser,
+      activeUsers,
     }
 
-    console.log("✅ Enhanced leaderboard generated:", {
-      userCount: leaderboard.length,
-      topUser: leaderboard[0]?.username,
-      topPoints: leaderboard[0]?.totalPoints,
-      stats,
+    console.log("✅ Leaderboard generated:", {
+      users: totalUsers,
+      topUser: sortedLeaderboard[0]?.username,
+      topPoints: sortedLeaderboard[0]?.totalPoints,
     })
 
     return NextResponse.json({
-      leaderboard,
+      leaderboard: sortedLeaderboard,
       stats,
     })
   } catch (error) {

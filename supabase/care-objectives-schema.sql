@@ -1,79 +1,103 @@
--- Care Objectives Schema for GOOD CARE DApp
--- This creates the backend-managed objectives system
-
 -- Create care_objectives table
 CREATE TABLE IF NOT EXISTS care_objectives (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    category TEXT NOT NULL CHECK (category IN ('mentorship', 'content', 'support', 'events')),
-    points INTEGER NOT NULL DEFAULT 0,
-    difficulty TEXT NOT NULL DEFAULT 'medium' CHECK (difficulty IN ('easy', 'medium', 'hard')),
-    estimated_hours INTEGER DEFAULT 5,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('mentorship', 'content', 'support', 'events')),
+  points INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'assigned', 'active', 'completed', 'verified')),
+  assigned_to UUID REFERENCES auth.users(id),
+  evidence_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  assigned_at TIMESTAMP WITH TIME ZONE,
+  started_at TIMESTAMP WITH TIME ZONE,
+  completed_at TIMESTAMP WITH TIME ZONE,
+  verified_at TIMESTAMP WITH TIME ZONE,
+  verified_by UUID REFERENCES auth.users(id)
 );
 
--- Create user_objectives table to track user progress
-CREATE TABLE IF NOT EXISTS user_objectives (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID NOT NULL,
-    objective_id UUID NOT NULL REFERENCES care_objectives(id) ON DELETE CASCADE,
-    status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN ('assigned', 'active', 'completed', 'verified')),
-    evidence TEXT,
-    started_at TIMESTAMP WITH TIME ZONE,
-    completed_at TIMESTAMP WITH TIME ZONE,
-    verified_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, objective_id)
+-- Create user_profiles table
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) UNIQUE,
+  username TEXT UNIQUE NOT NULL,
+  wallet_address TEXT UNIQUE,
+  avatar_url TEXT,
+  bio TEXT,
+  total_points INTEGER DEFAULT 0,
+  current_streak INTEGER DEFAULT 0,
+  max_streak INTEGER DEFAULT 0,
+  total_checkins INTEGER DEFAULT 0,
+  last_checkin_date DATE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Create daily_checkins table
+CREATE TABLE IF NOT EXISTS daily_checkins (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id),
+  mood INTEGER NOT NULL CHECK (mood >= 1 AND mood <= 5),
+  gratitude TEXT,
+  is_public BOOLEAN DEFAULT false,
+  points INTEGER DEFAULT 0,
+  streak INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  checkin_date DATE DEFAULT CURRENT_DATE,
+  UNIQUE(user_id, checkin_date)
+);
+
+-- Insert sample care objectives
+INSERT INTO care_objectives (title, description, category, points, status) VALUES
+('Onboard 5 New Members', 'Help 5 new community members get started with their wellness journey', 'mentorship', 100, 'available'),
+('Create Meditation Guide', 'Write a comprehensive guide on daily meditation practices', 'content', 75, 'available'),
+('Weekly Support Sessions', 'Host weekly peer support sessions for community members', 'support', 50, 'available'),
+('Community Wellness Workshop', 'Organize and facilitate a community wellness workshop', 'events', 125, 'available'),
+('Mental Health Resource List', 'Compile a list of mental health resources and tools', 'content', 60, 'available'),
+('Buddy System Setup', 'Create and manage a buddy system for new members', 'mentorship', 80, 'available'),
+('Gratitude Challenge', 'Design and run a 30-day gratitude challenge', 'events', 90, 'available'),
+('Crisis Support Training', 'Complete training to provide crisis support to community members', 'support', 120, 'available');
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_care_objectives_category ON care_objectives(category);
-CREATE INDEX IF NOT EXISTS idx_care_objectives_points ON care_objectives(points);
-CREATE INDEX IF NOT EXISTS idx_user_objectives_user_id ON user_objectives(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_objectives_status ON user_objectives(status);
-CREATE INDEX IF NOT EXISTS idx_user_objectives_user_status ON user_objectives(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_care_objectives_status ON care_objectives(status);
+CREATE INDEX IF NOT EXISTS idx_care_objectives_assigned_to ON care_objectives(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_wallet_address ON user_profiles(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins(user_id, checkin_date);
+CREATE INDEX IF NOT EXISTS idx_daily_checkins_date ON daily_checkins(checkin_date);
 
 -- Enable RLS
 ALTER TABLE care_objectives ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_objectives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_checkins ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies for care_objectives (read-only for users)
-CREATE POLICY "Users can view all objectives" ON care_objectives
-    FOR SELECT USING (true);
+-- RLS Policies
+CREATE POLICY "Care objectives are viewable by everyone" ON care_objectives FOR SELECT USING (true);
+CREATE POLICY "User profiles are viewable by everyone" ON user_profiles FOR SELECT USING (true);
+CREATE POLICY "Users can view their own checkins" ON daily_checkins FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert their own checkins" ON daily_checkins FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update their own profile" ON user_profiles FOR UPDATE USING (auth.uid() = user_id);
 
--- RLS Policies for user_objectives
-CREATE POLICY "Users can view their own objectives" ON user_objectives
-    FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own objectives" ON user_objectives
-    FOR UPDATE USING (auth.uid() = user_id);
-
--- Insert sample care objectives (backend managed)
-INSERT INTO care_objectives (title, description, category, points, difficulty, estimated_hours) VALUES
-('Onboard 5 New Members', 'Help 5 new community members complete their first check-in and understand the platform', 'mentorship', 100, 'medium', 8),
-('Create Meditation Guide', 'Write a comprehensive guide on daily meditation practices for the community', 'content', 75, 'medium', 6),
-('Weekly Support Sessions', 'Host weekly peer support sessions for community members', 'support', 50, 'easy', 4),
-('Community Wellness Workshop', 'Organize and facilitate a wellness workshop for the community', 'events', 125, 'hard', 12),
-('Mental Health Resource Hub', 'Curate and organize mental health resources for community access', 'content', 80, 'medium', 7),
-('Buddy System Program', 'Create and manage a buddy system pairing new and experienced members', 'mentorship', 90, 'medium', 10),
-('Crisis Support Training', 'Complete training to provide crisis support to community members', 'support', 60, 'medium', 5),
-('Gratitude Circle Event', 'Organize monthly gratitude sharing circles for the community', 'events', 70, 'easy', 3);
-
--- Function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
+-- Function to update user stats after checkin
+CREATE OR REPLACE FUNCTION update_user_stats_after_checkin()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
+  -- Update user profile stats
+  UPDATE user_profiles 
+  SET 
+    total_checkins = total_checkins + 1,
+    total_points = total_points + NEW.points,
+    current_streak = NEW.streak,
+    max_streak = GREATEST(max_streak, NEW.streak),
+    last_checkin_date = NEW.checkin_date,
+    updated_at = NOW()
+  WHERE user_id = NEW.user_id;
+  
+  RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$ LANGUAGE plpgsql;
 
--- Create triggers for updated_at
-CREATE TRIGGER update_care_objectives_updated_at BEFORE UPDATE ON care_objectives
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_user_objectives_updated_at BEFORE UPDATE ON user_objectives
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- Trigger to update user stats
+CREATE TRIGGER trigger_update_user_stats_after_checkin
+  AFTER INSERT ON daily_checkins
+  FOR EACH ROW
+  EXECUTE FUNCTION update_user_stats_after_checkin();

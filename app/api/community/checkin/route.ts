@@ -1,178 +1,156 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@supabase/supabase-js"
+
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, mood, gratitude, isPublic = false } = body
+    const { userId, mood, gratitude, isPublic } = body
 
     if (!userId || !mood) {
       return NextResponse.json({ error: "User ID and mood are required" }, { status: 400 })
     }
 
-    console.log("✅ Processing check-in:", { userId, mood, gratitude: !!gratitude, isPublic })
-
     const today = new Date().toISOString().split("T")[0]
 
     // Check if user already checked in today
-    const { data: existingCheckin, error: checkError } = await supabase
-      .from("user_checkins")
+    const { data: existingCheckin } = await supabase
+      .from("daily_checkins")
       .select("id")
       .eq("user_id", userId)
       .eq("checkin_date", today)
       .single()
 
-    if (checkError && checkError.code !== "PGRST116") {
-      console.error("❌ Error checking existing check-in:", checkError)
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
-    }
-
     if (existingCheckin) {
       return NextResponse.json({ error: "Already checked in today" }, { status: 400 })
     }
 
-    // Get user's streak information
-    const { data: recentCheckins, error: streakError } = await supabase
-      .from("user_checkins")
+    // Calculate points
+    let points = 10 // Base points for checking in
+    if (gratitude && gratitude.trim().length > 0) {
+      points += 5 // Bonus for gratitude
+    }
+
+    // Calculate streak
+    const { data: recentCheckins } = await supabase
+      .from("daily_checkins")
       .select("checkin_date")
       .eq("user_id", userId)
       .order("checkin_date", { ascending: false })
       .limit(30)
 
-    if (streakError) {
-      console.error("❌ Error fetching streak data:", streakError)
-    }
-
-    // Calculate current streak
-    let currentStreak = 0
+    let streak = 1
     if (recentCheckins && recentCheckins.length > 0) {
-      const dates = recentCheckins
-        .map((c) => c.checkin_date)
-        .sort()
-        .reverse()
       const yesterday = new Date()
       yesterday.setDate(yesterday.getDate() - 1)
       const yesterdayStr = yesterday.toISOString().split("T")[0]
 
-      // Check if yesterday was a check-in day
-      if (dates[0] === yesterdayStr) {
-        currentStreak = 1
-        // Count consecutive days
-        for (let i = 1; i < dates.length; i++) {
-          const expectedDate = new Date(yesterday)
-          expectedDate.setDate(expectedDate.getDate() - i)
+      if (recentCheckins[0].checkin_date === yesterdayStr) {
+        // Continue streak
+        let consecutiveDays = 1
+        for (let i = 1; i < recentCheckins.length; i++) {
+          const expectedDate = new Date()
+          expectedDate.setDate(expectedDate.getDate() - (i + 1))
           const expectedDateStr = expectedDate.toISOString().split("T")[0]
 
-          if (dates[i] === expectedDateStr) {
-            currentStreak++
+          if (recentCheckins[i].checkin_date === expectedDateStr) {
+            consecutiveDays++
           } else {
             break
           }
         }
+        streak = consecutiveDays + 1
       }
     }
 
-    const newStreak = currentStreak + 1
-
-    // Calculate points
-    let points = 10 // Base points
-    if (gratitude && gratitude.trim()) {
-      points += 5 // Gratitude bonus
-    }
-
-    // Streak bonus (up to 10 additional points)
-    const streakBonus = Math.min(newStreak - 1, 10)
+    // Add streak bonus (up to 10 points)
+    const streakBonus = Math.min(streak - 1, 10)
     points += streakBonus
 
-    // Create check-in record
-    const { data: checkin, error: insertError } = await supabase
-      .from("user_checkins")
+    // Insert checkin
+    const { data: checkin, error: checkinError } = await supabase
+      .from("daily_checkins")
       .insert({
         user_id: userId,
-        mood,
+        mood: Number.parseInt(mood),
         gratitude: gratitude || null,
-        is_public: isPublic,
+        is_public: isPublic || false,
         points,
-        streak: newStreak,
+        streak,
         checkin_date: today,
       })
       .select()
       .single()
 
-    if (insertError) {
-      console.error("❌ Error creating check-in:", insertError)
-      return NextResponse.json({ error: "Failed to create check-in" }, { status: 500 })
+    if (checkinError) {
+      console.error("Error inserting checkin:", checkinError)
+      return NextResponse.json({ error: "Failed to save check-in" }, { status: 500 })
     }
 
-    // Update user profile with latest check-in info
-    const { error: profileError } = await supabase
-      .from("user_profiles")
-      .update({
+    // Ensure user profile exists
+    const { data: profile } = await supabase.from("user_profiles").select("id").eq("user_id", userId).single()
+
+    if (!profile) {
+      // Create user profile if it doesn't exist
+      await supabase.from("user_profiles").insert({
+        user_id: userId,
+        username: `User${Date.now()}`,
+        total_points: points,
+        current_streak: streak,
+        max_streak: streak,
+        total_checkins: 1,
         last_checkin_date: today,
-        current_streak: newStreak,
-        total_checkins: supabase.rpc("increment_checkins", { user_id: userId }),
       })
-      .eq("user_id", userId)
-
-    if (profileError) {
-      console.error("❌ Error updating profile:", profileError)
-      // Don't fail the request, just log the error
     }
-
-    console.log("🎉 Check-in completed:", {
-      userId,
-      points,
-      streak: newStreak,
-      streakBonus,
-    })
 
     return NextResponse.json({
       success: true,
       checkin,
       points,
-      streak: newStreak,
-      streakBonus,
-      message: `Check-in complete! +${points} points (${streakBonus} streak bonus)`,
+      streak,
+      message: `Check-in successful! Earned ${points} points. Current streak: ${streak} days.`,
     })
   } catch (error) {
-    console.error("💥 Check-in API error:", error)
+    console.error("Checkin API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-// GET - Fetch recent public gratitudes for community inspiration
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const limit = Number.parseInt(searchParams.get("limit") || "10")
+    const userId = searchParams.get("userId")
 
-    console.log("🌟 Fetching public gratitudes...")
-
-    const { data: publicGratitudes, error } = await supabase
-      .from("user_checkins")
-      .select(`
-        gratitude,
-        mood,
-        checkin_date,
-        user_profiles!inner(username)
-      `)
-      .eq("is_public", true)
-      .not("gratitude", "is", null)
-      .order("checkin_date", { ascending: false })
-      .limit(limit)
-
-    if (error) {
-      console.error("❌ Error fetching public gratitudes:", error)
-      return NextResponse.json({ error: "Failed to fetch gratitudes" }, { status: 500 })
+    if (!userId) {
+      return NextResponse.json({ error: "User ID required" }, { status: 400 })
     }
 
-    console.log("✅ Public gratitudes fetched:", publicGratitudes?.length || 0)
+    // Get user's check-in history
+    const { data: checkins, error } = await supabase
+      .from("daily_checkins")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30)
+
+    if (error) {
+      console.error("Error fetching check-ins:", error)
+      return NextResponse.json({ error: "Failed to fetch check-ins" }, { status: 500 })
+    }
+
+    // Check if user has checked in today
+    const today = new Date().toISOString().split("T")[0]
+
+    const todayCheckin = checkins?.find((checkin) => checkin.checkin_date === today)
 
     return NextResponse.json({
-      gratitudes: publicGratitudes || [],
+      checkins: checkins || [],
+      hasCheckedInToday: !!todayCheckin,
+      todayCheckin,
     })
   } catch (error) {
-    console.error("💥 Public gratitudes GET error:", error)
+    console.error("Check-in GET API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

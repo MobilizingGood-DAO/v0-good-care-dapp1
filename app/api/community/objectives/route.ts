@@ -1,144 +1,83 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
-// GET - Fetch user's objectives
-export async function GET(request: NextRequest) {
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID required" }, { status: 400 })
+    let query = supabase.from("care_objectives").select("*")
+
+    if (userId) {
+      query = query.eq("assigned_to", userId)
     }
 
-    console.log("📋 Fetching objectives for user:", userId)
-
-    // Get user's objectives with objective details
-    const { data: userObjectives, error } = await supabase
-      .from("user_objectives")
-      .select(`
-        *,
-        care_objectives (
-          id,
-          title,
-          description,
-          category,
-          points,
-          difficulty,
-          estimated_hours
-        )
-      `)
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
+    const { data: objectives, error } = await query.order("created_at", { ascending: false })
 
     if (error) {
-      console.error("❌ Error fetching objectives:", error)
+      console.error("Error fetching objectives:", error)
       return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
     }
 
-    console.log("✅ Objectives fetched:", userObjectives?.length || 0)
-
-    return NextResponse.json({
-      objectives: userObjectives || [],
-    })
+    return NextResponse.json({ objectives: objectives || [] })
   } catch (error) {
-    console.error("💥 Objectives GET error:", error)
+    console.error("Objectives API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-// PATCH - Update objective status or evidence (user actions only)
-export async function PATCH(request: NextRequest) {
+export async function PATCH(request: Request) {
   try {
     const body = await request.json()
-    const { objectiveId, userId, status, evidence } = body
+    const { objectiveId, status, evidence_url, assigned_to } = body
 
-    if (!objectiveId || !userId) {
-      return NextResponse.json({ error: "Objective ID and User ID required" }, { status: 400 })
+    if (!objectiveId) {
+      return NextResponse.json({ error: "Objective ID is required" }, { status: 400 })
     }
 
-    console.log("📝 Updating objective:", { objectiveId, userId, status, evidence: !!evidence })
-
-    // Validate status transitions (users can only do certain transitions)
-    const validUserTransitions = {
-      assigned: ["active"],
-      active: ["completed"],
-      // completed -> verified is admin only (done through Supabase directly)
-    }
-
-    // Get current objective
-    const { data: currentObjective, error: fetchError } = await supabase
-      .from("user_objectives")
-      .select("status")
-      .eq("id", objectiveId)
-      .eq("user_id", userId)
-      .single()
-
-    if (fetchError || !currentObjective) {
-      console.error("❌ Error fetching current objective:", fetchError)
-      return NextResponse.json({ error: "Objective not found" }, { status: 404 })
-    }
-
-    // Prepare update data
-    const updateData: any = {}
+    const updates: any = {}
+    const now = new Date().toISOString()
 
     if (status) {
-      // Validate transition
-      const allowedTransitions = validUserTransitions[currentObjective.status as keyof typeof validUserTransitions]
-      if (!allowedTransitions?.includes(status)) {
-        return NextResponse.json(
-          { error: `Invalid status transition from ${currentObjective.status} to ${status}` },
-          { status: 400 },
-        )
-      }
+      updates.status = status
 
-      updateData.status = status
-
-      // Set timestamps based on status
-      if (status === "active") {
-        updateData.started_at = new Date().toISOString()
+      if (status === "assigned" && assigned_to) {
+        updates.assigned_to = assigned_to
+        updates.assigned_at = now
+      } else if (status === "active") {
+        updates.started_at = now
       } else if (status === "completed") {
-        updateData.completed_at = new Date().toISOString()
+        updates.completed_at = now
+      } else if (status === "verified") {
+        updates.verified_at = now
       }
     }
 
-    if (evidence !== undefined) {
-      updateData.evidence = evidence
+    if (evidence_url) {
+      updates.evidence_url = evidence_url
     }
 
-    // Update the objective
-    const { data: updatedObjective, error: updateError } = await supabase
-      .from("user_objectives")
-      .update(updateData)
+    const { data, error } = await supabase
+      .from("care_objectives")
+      .update(updates)
       .eq("id", objectiveId)
-      .eq("user_id", userId)
-      .select(`
-        *,
-        care_objectives (
-          id,
-          title,
-          description,
-          category,
-          points,
-          difficulty,
-          estimated_hours
-        )
-      `)
+      .select()
       .single()
 
-    if (updateError) {
-      console.error("❌ Error updating objective:", updateError)
+    if (error) {
+      console.error("Error updating objective:", error)
       return NextResponse.json({ error: "Failed to update objective" }, { status: 500 })
     }
 
-    console.log("✅ Objective updated successfully")
-
     return NextResponse.json({
-      objective: updatedObjective,
+      success: true,
+      objective: data,
       message: "Objective updated successfully",
     })
   } catch (error) {
-    console.error("💥 Objectives PATCH error:", error)
+    console.error("Objectives PATCH API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
