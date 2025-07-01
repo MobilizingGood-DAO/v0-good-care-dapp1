@@ -1,111 +1,162 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
-interface UserPoints {
-  userId: string
-  username: string
-  walletAddress: string
-  avatar?: string
-  selfCarePoints: number
-  careObjectivePoints: number
-  totalPoints: number
-  currentStreak: number
-  longestStreak: number
-  level: number
-  totalCheckins: number
-  lastCheckin?: string
-}
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url)
-    const limit = Number.parseInt(searchParams.get("limit") || "100")
+    console.log("🏆 Fetching leaderboard data...")
 
-    // Get self-care points from daily check-ins via user_stats
-    const { data: userStatsData, error: statsError } = await supabase
-      .from("users")
-      .select(`
-        id,
-        username,
-        wallet_address,
-        avatar,
-        user_stats (
-          total_points,
-          current_streak,
-          longest_streak,
-          level,
-          total_checkins,
-          last_checkin
-        )
-      `)
-      .not("user_stats", "is", null)
+    // Get all user profiles with their stats
+    const { data: profiles, error: profilesError } = await supabase
+      .from("user_profiles")
+      .select("*")
+      .order("total_points", { ascending: false })
 
-    if (statsError) {
-      console.error("Error fetching user stats:", statsError)
-      return NextResponse.json({ error: "Failed to fetch user stats" }, { status: 500 })
+    if (profilesError) {
+      console.error("❌ Error fetching profiles:", profilesError)
+      return NextResponse.json(
+        {
+          error: "Failed to fetch profiles",
+          leaderboard: [],
+          stats: {
+            totalUsers: 0,
+            totalSelfCarePoints: 0,
+            totalCommunityPoints: 0,
+            totalPoints: 0,
+            averagePointsPerUser: 0,
+            activeUsers: 0,
+          },
+        },
+        { status: 500 },
+      )
     }
 
-    // Get CARE objective points
-    const { data: objectiveData, error: objectiveError } = await supabase
-      .from("care_objectives")
-      .select(`
-        user_id,
-        username,
-        points
-      `)
-      .eq("status", "completed")
-
-    if (objectiveError) {
-      console.error("Error fetching objective points:", objectiveError)
-      // Don't fail if objectives table doesn't exist yet
-    }
-
-    // Aggregate objective points by user
-    const objectivePointsByUser = new Map<string, number>()
-    if (objectiveData) {
-      objectiveData.forEach((obj: any) => {
-        const currentPoints = objectivePointsByUser.get(obj.user_id) || 0
-        objectivePointsByUser.set(obj.user_id, currentPoints + obj.points)
+    if (!profiles || profiles.length === 0) {
+      console.log("📝 No profiles found")
+      return NextResponse.json({
+        leaderboard: [],
+        stats: {
+          totalUsers: 0,
+          totalSelfCarePoints: 0,
+          totalCommunityPoints: 0,
+          totalPoints: 0,
+          averagePointsPerUser: 0,
+          activeUsers: 0,
+        },
       })
     }
 
-    // Combine the data
-    const combinedData: UserPoints[] = (userStatsData || []).map((user: any) => {
-      const selfCarePoints = user.user_stats?.total_points || 0
-      const careObjectivePoints = objectivePointsByUser.get(user.id) || 0
-      const totalPoints = selfCarePoints + careObjectivePoints
+    // Get community points for each user from verified objectives
+    const { data: objectives, error: objectivesError } = await supabase
+      .from("care_objectives")
+      .select("assigned_to, points")
+      .eq("status", "verified")
 
-      return {
-        userId: user.id,
-        username: user.username || `User_${user.wallet_address.slice(-6)}`,
-        walletAddress: user.wallet_address,
-        avatar: user.avatar,
-        selfCarePoints,
-        careObjectivePoints,
-        totalPoints,
-        currentStreak: user.user_stats?.current_streak || 0,
-        longestStreak: user.user_stats?.longest_streak || 0,
-        level: user.user_stats?.level || 1,
-        totalCheckins: user.user_stats?.total_checkins || 0,
-        lastCheckin: user.user_stats?.last_checkin,
-      }
-    })
+    if (objectivesError) {
+      console.error("❌ Error fetching objectives:", objectivesError)
+    }
 
-    // Sort by total points and add ranks
-    const sortedData = combinedData
-      .sort((a, b) => b.totalPoints - a.totalPoints)
-      .slice(0, limit)
-      .map((entry, index) => ({
-        ...entry,
+    // Calculate community points per user
+    const communityPointsMap = new Map<string, number>()
+    if (objectives) {
+      objectives.forEach((obj) => {
+        if (obj.assigned_to) {
+          const current = communityPointsMap.get(obj.assigned_to) || 0
+          communityPointsMap.set(obj.assigned_to, current + obj.points)
+        }
+      })
+    }
+
+    // Get recent activity for each user (last 7 days)
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+    const leaderboardData = await Promise.all(
+      profiles.map(async (profile) => {
+        // Get recent checkins for activity dots
+        const { data: recentCheckins } = await supabase
+          .from("daily_checkins")
+          .select("checkin_date")
+          .eq("user_id", profile.user_id)
+          .gte("checkin_date", sevenDaysAgo.toISOString().split("T")[0])
+          .order("checkin_date", { ascending: false })
+
+        const recentActivity = recentCheckins?.map((c) => c.checkin_date) || []
+        const communityPoints = communityPointsMap.get(profile.user_id) || 0
+        const selfCarePoints = profile.total_points || 0
+        const totalPoints = selfCarePoints + communityPoints
+
+        return {
+          id: profile.id,
+          user_id: profile.user_id,
+          username: profile.username || `User${profile.wallet_address?.slice(-4)}`,
+          wallet_address: profile.wallet_address,
+          avatar_url: profile.avatar_url,
+          self_care_points: selfCarePoints,
+          community_points: communityPoints,
+          total_points: totalPoints,
+          total_checkins: profile.total_checkins || 0,
+          current_streak: profile.current_streak || 0,
+          recent_activity: recentActivity,
+          joined_at: profile.created_at,
+        }
+      }),
+    )
+
+    // Sort by total points and assign ranks
+    const sortedLeaderboard = leaderboardData
+      .sort((a, b) => b.total_points - a.total_points)
+      .map((user, index) => ({
+        ...user,
         rank: index + 1,
       }))
 
+    // Calculate stats
+    const totalUsers = profiles.length
+    const totalSelfCarePoints = leaderboardData.reduce((sum, user) => sum + user.self_care_points, 0)
+    const totalCommunityPoints = leaderboardData.reduce((sum, user) => sum + user.community_points, 0)
+    const totalPoints = totalSelfCarePoints + totalCommunityPoints
+    const averagePointsPerUser = totalUsers > 0 ? Math.round(totalPoints / totalUsers) : 0
+    const activeUsers = leaderboardData.filter((user) => user.current_streak > 0).length
+
+    const stats = {
+      totalUsers,
+      totalSelfCarePoints,
+      totalCommunityPoints,
+      totalPoints,
+      averagePointsPerUser,
+      activeUsers,
+    }
+
+    console.log("✅ Leaderboard generated:", {
+      users: totalUsers,
+      topUser: sortedLeaderboard[0]?.username,
+      topPoints: sortedLeaderboard[0]?.total_points,
+    })
+
     return NextResponse.json({
+      leaderboard: sortedLeaderboard,
+      stats,
       success: true,
-      leaderboard: sortedData,
     })
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("💥 Leaderboard API error:", error)
+    return NextResponse.json(
+      {
+        error: "Internal server error",
+        leaderboard: [],
+        stats: {
+          totalUsers: 0,
+          totalSelfCarePoints: 0,
+          totalCommunityPoints: 0,
+          totalPoints: 0,
+          averagePointsPerUser: 0,
+          activeUsers: 0,
+        },
+        success: false,
+      },
+      { status: 500 },
+    )
   }
 }
