@@ -1,74 +1,114 @@
--- Test script to add sample data for leaderboard testing
--- Run this in your Supabase SQL editor to populate test data
+-- Test data for GOOD CARE leaderboard
+-- Run this in your Supabase SQL editor to populate sample data
 
--- Insert test users if they don't exist
-INSERT INTO user_profiles (user_id, username, wallet_address, total_points, total_checkins, current_streak, created_at)
-VALUES 
-  ('test-user-1', 'Alice Wellness', '0x1234...5678', 150, 15, 5, NOW() - INTERVAL '30 days'),
-  ('test-user-2', 'Bob Mindful', '0x2345...6789', 120, 12, 3, NOW() - INTERVAL '25 days'),
-  ('test-user-3', 'Carol Care', '0x3456...7890', 200, 20, 7, NOW() - INTERVAL '20 days'),
-  ('test-user-4', 'David Zen', '0x4567...8901', 80, 8, 2, NOW() - INTERVAL '15 days'),
-  ('test-user-5', 'Eva Harmony', '0x5678...9012', 180, 18, 6, NOW() - INTERVAL '10 days')
-ON CONFLICT (user_id) DO UPDATE SET
-  total_points = EXCLUDED.total_points,
+-- First, ensure we have the user_profiles table
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID UNIQUE NOT NULL,
+  username TEXT UNIQUE,
+  wallet_address TEXT,
+  avatar_url TEXT,
+  self_care_points INTEGER DEFAULT 0,
+  community_points INTEGER DEFAULT 0,
+  total_checkins INTEGER DEFAULT 0,
+  current_streak INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Insert sample users with varying points and activity
+INSERT INTO user_profiles (user_id, username, wallet_address, self_care_points, community_points, total_checkins, current_streak) VALUES
+  (gen_random_uuid(), 'CareGiver_Alice', '0x1234...5678', 450, 120, 45, 7),
+  (gen_random_uuid(), 'Mindful_Bob', '0x2345...6789', 380, 95, 38, 5),
+  (gen_random_uuid(), 'Wellness_Carol', '0x3456...7890', 320, 180, 32, 3),
+  (gen_random_uuid(), 'Healing_Dave', '0x4567...8901', 290, 85, 29, 0),
+  (gen_random_uuid(), 'Peaceful_Eve', '0x5678...9012', 275, 110, 27, 2),
+  (gen_random_uuid(), 'Grateful_Frank', '0x6789...0123', 240, 75, 24, 1),
+  (gen_random_uuid(), 'Loving_Grace', '0x7890...1234', 220, 90, 22, 4),
+  (gen_random_uuid(), 'Calm_Henry', '0x8901...2345', 195, 65, 19, 0),
+  (gen_random_uuid(), 'Serene_Iris', '0x9012...3456', 180, 55, 18, 6),
+  (gen_random_uuid(), 'Zen_Jack', '0x0123...4567', 165, 45, 16, 1)
+ON CONFLICT (username) DO UPDATE SET
+  self_care_points = EXCLUDED.self_care_points,
+  community_points = EXCLUDED.community_points,
   total_checkins = EXCLUDED.total_checkins,
-  current_streak = EXCLUDED.current_streak;
+  current_streak = EXCLUDED.current_streak,
+  updated_at = NOW();
 
--- Insert test daily checkins for recent activity
-INSERT INTO daily_checkins (user_id, checkin_date, mood_score, gratitude_text, created_at)
-VALUES 
-  -- Alice's checkins
-  ('test-user-1', CURRENT_DATE, 8, 'Grateful for a peaceful morning', NOW()),
-  ('test-user-1', CURRENT_DATE - 1, 7, 'Thankful for good friends', NOW() - INTERVAL '1 day'),
-  ('test-user-1', CURRENT_DATE - 2, 9, 'Appreciating nature', NOW() - INTERVAL '2 days'),
-  
-  -- Bob's checkins
-  ('test-user-2', CURRENT_DATE, 6, 'Grateful for family time', NOW()),
-  ('test-user-2', CURRENT_DATE - 1, 8, 'Thankful for good health', NOW() - INTERVAL '1 day'),
-  
-  -- Carol's checkins
-  ('test-user-3', CURRENT_DATE, 9, 'Grateful for new opportunities', NOW()),
-  ('test-user-3', CURRENT_DATE - 1, 8, 'Thankful for learning', NOW() - INTERVAL '1 day'),
-  ('test-user-3', CURRENT_DATE - 2, 7, 'Appreciating creativity', NOW() - INTERVAL '2 days'),
-  ('test-user-3', CURRENT_DATE - 3, 8, 'Grateful for progress', NOW() - INTERVAL '3 days'),
-  
-  -- David's checkins
-  ('test-user-4', CURRENT_DATE - 1, 7, 'Thankful for rest', NOW() - INTERVAL '1 day'),
-  
-  -- Eva's checkins
-  ('test-user-5', CURRENT_DATE, 8, 'Grateful for balance', NOW()),
-  ('test-user-5', CURRENT_DATE - 1, 9, 'Thankful for growth', NOW() - INTERVAL '1 day'),
-  ('test-user-5', CURRENT_DATE - 2, 7, 'Appreciating challenges', NOW() - INTERVAL '2 days')
-ON CONFLICT (user_id, checkin_date) DO NOTHING;
+-- Create daily_checkins table if it doesn't exist
+CREATE TABLE IF NOT EXISTS daily_checkins (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL,
+  username TEXT NOT NULL,
+  mood INTEGER NOT NULL CHECK (mood >= 1 AND mood <= 5),
+  gratitude TEXT,
+  reflection TEXT,
+  is_public BOOLEAN DEFAULT true,
+  points_earned INTEGER DEFAULT 10,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
--- Insert test care objectives for community points
-INSERT INTO care_objectives (title, description, points, assigned_to, status, created_at)
-VALUES 
-  ('Community Helper', 'Help 3 community members', 50, 'test-user-1', 'verified', NOW() - INTERVAL '5 days'),
-  ('Wellness Mentor', 'Mentor new users', 75, 'test-user-3', 'verified', NOW() - INTERVAL '3 days'),
-  ('Event Organizer', 'Organize community event', 100, 'test-user-5', 'verified', NOW() - INTERVAL '2 days'),
-  ('Content Creator', 'Share wellness tips', 25, 'test-user-2', 'verified', NOW() - INTERVAL '1 day')
+-- Insert some recent check-ins
+INSERT INTO daily_checkins (user_id, username, mood, gratitude, points_earned) 
+SELECT 
+  up.user_id,
+  up.username,
+  (RANDOM() * 4 + 1)::INTEGER,
+  CASE 
+    WHEN RANDOM() > 0.5 THEN 'Grateful for this beautiful day and the opportunity to practice self-care'
+    ELSE 'Thankful for my health and the support of this community'
+  END,
+  10 + (RANDOM() * 15)::INTEGER
+FROM user_profiles up
+WHERE up.current_streak > 0
+ORDER BY RANDOM()
+LIMIT 15;
+
+-- Create care_objectives table if it doesn't exist
+CREATE TABLE IF NOT EXISTS care_objectives (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT DEFAULT 'wellness',
+  points_reward INTEGER DEFAULT 50,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Insert sample care objectives
+INSERT INTO care_objectives (title, description, points_reward) VALUES
+  ('Daily Meditation', 'Complete 10 minutes of mindful meditation', 25),
+  ('Gratitude Journal', 'Write 3 things you are grateful for', 20),
+  ('Nature Walk', 'Take a 30-minute walk in nature', 30),
+  ('Digital Detox', 'Spend 2 hours without screens', 40),
+  ('Acts of Kindness', 'Perform 3 random acts of kindness', 50),
+  ('Healthy Meal Prep', 'Prepare a nutritious meal from scratch', 35),
+  ('Community Support', 'Help another community member', 60),
+  ('Mindful Breathing', 'Practice breathing exercises for 15 minutes', 25)
 ON CONFLICT DO NOTHING;
 
--- Verify the data
+-- Update user profiles with calculated totals (this would normally be done by triggers)
+UPDATE user_profiles SET
+  updated_at = NOW()
+WHERE id IN (SELECT id FROM user_profiles LIMIT 10);
+
+-- Show the results
 SELECT 
-  'User Profiles' as table_name,
-  COUNT(*) as count
-FROM user_profiles
-WHERE user_id LIKE 'test-user-%'
+  username,
+  self_care_points,
+  community_points,
+  (self_care_points + community_points) as total_points,
+  current_streak,
+  total_checkins
+FROM user_profiles 
+ORDER BY (self_care_points + community_points) DESC;
 
-UNION ALL
-
+-- Show community stats
 SELECT 
-  'Daily Checkins' as table_name,
-  COUNT(*) as count
-FROM daily_checkins
-WHERE user_id LIKE 'test-user-%'
-
-UNION ALL
-
-SELECT 
-  'Care Objectives' as table_name,
-  COUNT(*) as count
-FROM care_objectives
-WHERE assigned_to LIKE 'test-user-%';
+  COUNT(*) as total_users,
+  SUM(self_care_points) as total_self_care_points,
+  SUM(community_points) as total_community_points,
+  SUM(self_care_points + community_points) as total_points,
+  ROUND(AVG(self_care_points + community_points)) as average_points_per_user,
+  COUNT(*) FILTER (WHERE current_streak > 0) as active_users
+FROM user_profiles;
