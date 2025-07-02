@@ -4,22 +4,21 @@ import { createClient } from "@supabase/supabase-js"
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 export async function GET(request: NextRequest) {
-  try {
-    console.log("🎯 API: Fetching care objectives...")
+  console.log("🎯 API: Fetching care objectives...")
 
+  try {
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get("userId")
+
+    if (!userId) {
+      return NextResponse.json({ error: "Missing userId parameter" }, { status: 400 })
+    }
+
+    // Fetch user's care objectives
     const { data: objectives, error } = await supabase
       .from("care_objectives")
-      .select(`
-        id,
-        title,
-        description,
-        category,
-        points_value,
-        difficulty_level,
-        is_active,
-        created_at
-      `)
-      .eq("is_active", true)
+      .select("*")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -27,94 +26,77 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
-    console.log(`✅ API: Found ${objectives?.length || 0} active objectives`)
+    console.log("✅ Fetched objectives:", objectives?.length || 0)
 
     return NextResponse.json({
       objectives: objectives || [],
-      success: true,
     })
   } catch (error) {
-    console.error("❌ API: Error in objectives GET route:", error)
-    return NextResponse.json(
-      {
-        objectives: [],
-        success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch objectives",
-      },
-      { status: 500 },
-    )
+    console.error("❌ API: Objectives fetch error:", error)
+    return NextResponse.json({ error: "Failed to fetch objectives" }, { status: 500 })
   }
 }
 
 export async function PATCH(request: NextRequest) {
+  console.log("🎯 API: Updating care objective...")
+
   try {
     const body = await request.json()
-    const { objectiveId, userId, status, evidence, completedAt } = body
+    const { objectiveId, status, evidence, userId } = body
 
-    console.log("🎯 API: Updating objective:", objectiveId, "for user:", userId)
-
-    if (!objectiveId || !userId) {
-      return NextResponse.json({ error: "Missing required fields: objectiveId and userId" }, { status: 400 })
+    if (!objectiveId || !status) {
+      return NextResponse.json({ error: "Missing required fields: objectiveId, status" }, { status: 400 })
     }
 
-    // Update or insert user objective progress
-    const { data: progress, error: progressError } = await supabase
-      .from("user_objective_progress")
-      .upsert({
-        user_id: userId,
-        objective_id: objectiveId,
-        status: status || "in_progress",
-        evidence_text: evidence,
-        completed_at: completedAt ? new Date(completedAt).toISOString() : null,
+    // Update objective
+    const { data: objective, error: updateError } = await supabase
+      .from("care_objectives")
+      .update({
+        status,
+        evidence: evidence || null,
+        completed_at: status === "completed" ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
+      .eq("id", objectiveId)
       .select()
       .single()
 
-    if (progressError) {
-      console.error("❌ Error updating objective progress:", progressError)
-      throw progressError
+    if (updateError) {
+      console.error("❌ Error updating objective:", updateError)
+      throw updateError
     }
 
-    // If objective is completed and verified, award points
-    if (status === "completed" && completedAt) {
-      // Get objective details for points
-      const { data: objective, error: objError } = await supabase
-        .from("care_objectives")
-        .select("points_value")
-        .eq("id", objectiveId)
-        .single()
+    // If objective is completed and verified, award community points
+    if (status === "verified" && objective && userId) {
+      const pointsToAward = objective.points_value || 50
 
-      if (!objError && objective) {
-        // Update user's community points
-        const { error: pointsError } = await supabase.rpc("increment_community_points", {
-          user_id: userId,
-          points_to_add: objective.points_value || 25,
+      const { error: pointsError } = await supabase
+        .from("user_profiles")
+        .update({
+          community_points: supabase.raw(`community_points + ${pointsToAward}`),
         })
+        .eq("id", userId)
 
-        if (pointsError) {
-          console.error("❌ Error updating community points:", pointsError)
-        } else {
-          console.log(`✅ Awarded ${objective.points_value} community points to user ${userId}`)
-        }
+      if (pointsError) {
+        console.error("❌ Error awarding points:", pointsError)
+      } else {
+        console.log("✅ Awarded community points:", pointsToAward)
       }
     }
 
-    console.log("✅ API: Objective updated successfully")
+    console.log("✅ Objective updated successfully:", {
+      objectiveId,
+      status,
+      pointsAwarded: status === "verified" ? objective.points_value : 0,
+    })
 
     return NextResponse.json({
       success: true,
-      message: "Objective updated successfully",
-      data: progress,
+      objective,
+      pointsAwarded: status === "verified" ? objective.points_value || 0 : 0,
     })
   } catch (error) {
-    console.error("❌ API: Error in objectives PATCH route:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Failed to update objective",
-      },
-      { status: 500 },
-    )
+    console.error("❌ API: Objective update error:", error)
+    return NextResponse.json({ error: "Failed to update objective" }, { status: 500 })
   }
 }
