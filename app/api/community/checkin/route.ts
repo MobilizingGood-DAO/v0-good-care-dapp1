@@ -1,104 +1,110 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, username, mood, gratitude, isPublic = false } = body
+    const { userId, username, mood, gratitude, isPublic = true } = body
 
-    if (!userId || !username || mood === undefined) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    console.log("📝 API: Processing check-in for user:", userId)
+
+    if (!userId || mood === undefined) {
+      return NextResponse.json({ error: "Missing required fields: userId and mood" }, { status: 400 })
     }
 
-    // Get user's last check-in to calculate streak
-    const { data: lastCheckin } = await supabase
-      .from("community_checkins")
-      .select("created_at, current_streak")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single()
+    // Calculate points based on check-in
+    const basePoints = 10 // Base points for daily check-in
+    const gratitudeBonus = gratitude ? 5 : 0 // Bonus for gratitude
+    const totalPoints = basePoints + gratitudeBonus
 
-    // Calculate streak
-    let currentStreak = 1
-    if (lastCheckin) {
-      const lastCheckinDate = new Date(lastCheckin.created_at)
-      const today = new Date()
-      const yesterday = new Date(today)
-      yesterday.setDate(yesterday.getDate() - 1)
-
-      // Check if last check-in was yesterday
-      const lastCheckinDateOnly = lastCheckinDate.toDateString()
-      const yesterdayDateOnly = yesterday.toDateString()
-
-      if (lastCheckinDateOnly === yesterdayDateOnly) {
-        currentStreak = (lastCheckin.current_streak || 0) + 1
-      } else if (lastCheckinDate.toDateString() === today.toDateString()) {
-        // Already checked in today, don't allow duplicate
-        return NextResponse.json({ error: "Already checked in today" }, { status: 400 })
-      }
-      // If gap > 1 day, streak resets to 1
-    }
-
-    // Calculate points
-    let pointsEarned = 10 // Base points
-    if (gratitude && gratitude.trim().length > 0) {
-      pointsEarned += 5 // Gratitude bonus
-    }
-
-    // Streak bonus (up to 10 extra points)
-    const streakBonus = Math.min(currentStreak - 1, 10)
-    pointsEarned += streakBonus
-
-    // Insert check-in
+    // Insert check-in record
     const { data: checkin, error: checkinError } = await supabase
-      .from("community_checkins")
+      .from("daily_checkins")
       .insert({
         user_id: userId,
-        username,
-        mood: Number.parseInt(mood),
-        gratitude: gratitude || null,
+        mood_rating: mood,
+        gratitude_note: gratitude,
+        points_earned: totalPoints,
         is_public: isPublic,
-        current_streak: currentStreak,
-        points_earned: pointsEarned,
+        created_at: new Date().toISOString(),
       })
       .select()
       .single()
 
     if (checkinError) {
-      console.error("Error creating check-in:", checkinError)
+      console.error("❌ Error inserting check-in:", checkinError)
       throw checkinError
     }
 
-    // Update user's total points and streak
-    const { error: updateError } = await supabase.from("community_users").upsert({
-      id: userId,
-      username,
-      current_streak: currentStreak,
-      total_points: supabase.rpc("increment_user_points", { user_id: userId, points: pointsEarned }),
-      last_checkin: new Date().toISOString(),
+    // Update user profile with new points and streak
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("self_care_points, current_streak, total_checkins, last_checkin_date")
+      .eq("user_id", userId)
+      .single()
+
+    if (profileError && profileError.code !== "PGRST116") {
+      // PGRST116 = no rows returned
+      console.error("❌ Error fetching profile:", profileError)
+      throw profileError
+    }
+
+    // Calculate new streak
+    const today = new Date().toDateString()
+    const lastCheckin = profile?.last_checkin_date ? new Date(profile.last_checkin_date).toDateString() : null
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString()
+
+    let newStreak = 1
+    if (lastCheckin === yesterday) {
+      newStreak = (profile?.current_streak || 0) + 1
+    } else if (lastCheckin === today) {
+      newStreak = profile?.current_streak || 1 // Same day check-in
+    }
+
+    // Streak bonus (up to 10 points for streaks >= 7 days)
+    const streakBonus = Math.min(Math.floor(newStreak / 7) * 5, 10)
+    const finalPoints = totalPoints + streakBonus
+
+    // Update or insert user profile
+    const { error: updateError } = await supabase.from("user_profiles").upsert({
+      user_id: userId,
+      username: username || `User${userId.slice(-4)}`,
+      self_care_points: (profile?.self_care_points || 0) + finalPoints,
+      current_streak: newStreak,
+      total_checkins: (profile?.total_checkins || 0) + 1,
+      last_checkin_date: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     })
 
     if (updateError) {
-      console.error("Error updating user stats:", updateError)
-      // Don't throw here, check-in was successful
+      console.error("❌ Error updating profile:", updateError)
+      throw updateError
     }
+
+    console.log("✅ API: Check-in processed successfully:", {
+      userId,
+      points: finalPoints,
+      streak: newStreak,
+    })
 
     return NextResponse.json({
       success: true,
-      message: `Check-in successful! Earned ${pointsEarned} points. Current streak: ${currentStreak} days.`,
-      checkin,
-      pointsEarned,
-      currentStreak,
+      message: `Check-in successful! Earned ${finalPoints} points (${newStreak} day streak)`,
+      data: {
+        checkinId: checkin.id,
+        pointsEarned: finalPoints,
+        currentStreak: newStreak,
+        totalCheckins: (profile?.total_checkins || 0) + 1,
+      },
     })
   } catch (error) {
-    console.error("Error processing check-in:", error)
+    console.error("❌ API: Error in check-in route:", error)
     return NextResponse.json(
       {
-        error: "Failed to process check-in",
         success: false,
+        error: error instanceof Error ? error.message : "Failed to process check-in",
       },
       { status: 500 },
     )
@@ -112,7 +118,7 @@ export async function GET(request: NextRequest) {
     const username = searchParams.get("username")
     const limit = Number.parseInt(searchParams.get("limit") || "10")
 
-    let query = supabase.from("community_checkins").select("*").order("created_at", { ascending: false }).limit(limit)
+    let query = supabase.from("daily_checkins").select("*").order("created_at", { ascending: false }).limit(limit)
 
     if (userId) {
       query = query.eq("user_id", userId)

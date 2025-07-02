@@ -1,5 +1,44 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    esmExternals: 'loose'
+  },
+  webpack: (config, { isServer }) => {
+    // Handle worker files
+    config.module.rules.push({
+      test: /\.worker\.js$/,
+      loader: 'worker-loader',
+      options: { 
+        type: 'module',
+        publicPath: '/_next/static/workers/'
+      },
+    });
+
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    
+    return config;
+  },
+  // Ensure static files are served correctly
+  async headers() {
+    return [
+      {
+        source: '/_next/static/workers/:path*',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/javascript',
+          },
+        ],
+      },
+    ];
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -9,32 +48,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  webpack: (config, { isServer, webpack }) => {
-    // Configure fallbacks for browser-only APIs
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      fs: false,
-      net: false,
-      tls: false,
-      crypto: false,
-    }
-    
-    // Add global polyfills for server-side rendering
-    if (isServer) {
-      config.plugins.push(
-        new webpack.DefinePlugin({
-          'typeof window': JSON.stringify('undefined'),
-          'typeof indexedDB': JSON.stringify('undefined'), // Added indexedDB fallback
-        })
-      )
-    }
-    
-    return config
-  },
-  // Disable static optimization for pages using browser APIs
-  experimental: {
-    serverComponentsExternalPackages: ['@walletconnect/ethereum-provider']
-  }
-}
+};
 
-export default nextConfig
+export default nextConfig;

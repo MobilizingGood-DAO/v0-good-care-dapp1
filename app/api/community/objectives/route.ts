@@ -1,40 +1,45 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const username = searchParams.get("username")
-    const userId = searchParams.get("userId")
+    console.log("🎯 API: Fetching care objectives...")
 
-    let query = supabase.from("care_objectives").select("*").order("created_at", { ascending: false })
-
-    if (username) {
-      query = query.eq("username", username)
-    } else if (userId) {
-      query = query.eq("user_id", userId)
-    }
-
-    const { data: objectives, error } = await query
+    const { data: objectives, error } = await supabase
+      .from("care_objectives")
+      .select(`
+        id,
+        title,
+        description,
+        category,
+        points_value,
+        difficulty_level,
+        is_active,
+        created_at
+      `)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
 
     if (error) {
-      console.error("Error fetching objectives:", error)
+      console.error("❌ Error fetching objectives:", error)
       throw error
     }
+
+    console.log(`✅ API: Found ${objectives?.length || 0} active objectives`)
 
     return NextResponse.json({
       objectives: objectives || [],
       success: true,
     })
   } catch (error) {
-    console.error("Error fetching objectives:", error)
+    console.error("❌ API: Error in objectives GET route:", error)
     return NextResponse.json(
       {
-        error: "Failed to fetch objectives",
         objectives: [],
         success: false,
+        error: error instanceof Error ? error.message : "Failed to fetch objectives",
       },
       { status: 500 },
     )
@@ -44,103 +49,70 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { objectiveId, status, evidence_url, username } = body
+    const { objectiveId, userId, status, evidence, completedAt } = body
 
-    if (!objectiveId) {
-      return NextResponse.json({ error: "Objective ID is required" }, { status: 400 })
+    console.log("🎯 API: Updating objective:", objectiveId, "for user:", userId)
+
+    if (!objectiveId || !userId) {
+      return NextResponse.json({ error: "Missing required fields: objectiveId and userId" }, { status: 400 })
     }
 
-    // Prepare update data
-    const updateData: any = {
-      updated_at: new Date().toISOString(),
-    }
-
-    if (status) {
-      updateData.status = status
-
-      // Set timestamps based on status
-      if (status === "active" && !updateData.started_at) {
-        updateData.started_at = new Date().toISOString()
-      } else if (status === "completed" && !updateData.completed_at) {
-        updateData.completed_at = new Date().toISOString()
-      } else if (status === "verified" && !updateData.verified_at) {
-        updateData.verified_at = new Date().toISOString()
-      }
-    }
-
-    if (evidence_url) {
-      updateData.evidence_url = evidence_url
-    }
-
-    // Update the objective
-    const { data, error } = await supabase
-      .from("care_objectives")
-      .update(updateData)
-      .eq("id", objectiveId)
-      .select()
-      .single()
-
-    if (error) {
-      console.error("Error updating objective:", error)
-      throw error
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "Objective updated successfully",
-      objective: data,
-    })
-  } catch (error) {
-    console.error("Error updating objective:", error)
-    return NextResponse.json(
-      {
-        error: "Failed to update objective",
-        success: false,
-      },
-      { status: 500 },
-    )
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { username, title, description, category, points = 50 } = body
-
-    if (!username || !title || !description || !category) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
-    }
-
-    // Create new objective (admin only)
-    const { data, error } = await supabase
-      .from("care_objectives")
-      .insert({
-        username,
-        title,
-        description,
-        category,
-        points,
-        status: "assigned",
+    // Update or insert user objective progress
+    const { data: progress, error: progressError } = await supabase
+      .from("user_objective_progress")
+      .upsert({
+        user_id: userId,
+        objective_id: objectiveId,
+        status: status || "in_progress",
+        evidence_text: evidence,
+        completed_at: completedAt ? new Date(completedAt).toISOString() : null,
+        updated_at: new Date().toISOString(),
       })
       .select()
       .single()
 
-    if (error) {
-      console.error("Error creating objective:", error)
-      throw error
+    if (progressError) {
+      console.error("❌ Error updating objective progress:", progressError)
+      throw progressError
     }
+
+    // If objective is completed and verified, award points
+    if (status === "completed" && completedAt) {
+      // Get objective details for points
+      const { data: objective, error: objError } = await supabase
+        .from("care_objectives")
+        .select("points_value")
+        .eq("id", objectiveId)
+        .single()
+
+      if (!objError && objective) {
+        // Update user's community points
+        const { error: pointsError } = await supabase.rpc("increment_community_points", {
+          user_id: userId,
+          points_to_add: objective.points_value || 25,
+        })
+
+        if (pointsError) {
+          console.error("❌ Error updating community points:", pointsError)
+        } else {
+          console.log(`✅ Awarded ${objective.points_value} community points to user ${userId}`)
+        }
+      }
+    }
+
+    console.log("✅ API: Objective updated successfully")
 
     return NextResponse.json({
       success: true,
-      message: "Objective created successfully",
-      objective: data,
+      message: "Objective updated successfully",
+      data: progress,
     })
   } catch (error) {
-    console.error("Error creating objective:", error)
+    console.error("❌ API: Error in objectives PATCH route:", error)
     return NextResponse.json(
       {
-        error: "Failed to create objective",
         success: false,
+        error: error instanceof Error ? error.message : "Failed to update objective",
       },
       { status: 500 },
     )
