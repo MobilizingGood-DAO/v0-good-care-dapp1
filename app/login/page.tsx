@@ -10,14 +10,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { SupabaseAuthService } from "@/lib/supabase-auth-service"
 import { Heart, Twitter, Mail } from "lucide-react"
+import { Suspense } from "react"
+import { TwitterOnboarding } from "@/components/auth/twitter-onboarding"
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [username, setUsername] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
   const router = useRouter()
+
+  const handleAuthComplete = (user: any) => {
+    console.log("Authentication complete:", user)
+    router.push("/dashboard")
+  }
 
   const handleEmailSignIn = async () => {
     if (!email || !password) {
@@ -232,6 +239,24 @@ export default function LoginPage() {
           </div>
         </CardContent>
       </Card>
+      <TwitterOnboarding onComplete={handleAuthComplete} />
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-6xl mb-4">🌱</div>
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   )
 }

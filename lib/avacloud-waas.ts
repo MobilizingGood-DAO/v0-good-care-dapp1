@@ -166,7 +166,7 @@ export const connectExternalWallet = async (walletType: string, address?: string
   }
 }
 
-export const exportPrivateKey = async (address: string, userAuth: any) => {
+export const exportPrivateKey = async (address: string, userAuth?: any) => {
   try {
     // Mock implementation - in production this would require proper authentication
     // and would only work for embedded wallets, not external ones
@@ -175,12 +175,16 @@ export const exportPrivateKey = async (address: string, userAuth: any) => {
     // Return mock private key for development
     // In production, this should only work for embedded wallets with proper auth
     return {
+      success: true,
       privateKey: `0x${Math.random().toString(16).substr(2, 64)}`,
       address,
       warning: "Keep this private key secure and never share it",
     }
   } catch (error) {
     console.error("Error exporting private key:", error)
-    throw error
+    return {
+      success: false,
+      error: "Failed to export private key",
+    }
   }
 }
