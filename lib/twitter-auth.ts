@@ -8,15 +8,28 @@ interface TwitterOAuthConfig {
   callbackUrl: string
 }
 
+interface TwitterRequestToken {
+  oauth_token: string
+  oauth_token_secret: string
+  oauth_callback_confirmed: string
+}
+
+interface TwitterAccessToken {
+  oauth_token: string
+  oauth_token_secret: string
+  user_id: string
+  screen_name: string
+}
+
 interface TwitterUser {
   id: string
-  username: string
   name: string
-  profile_image_url?: string
+  screen_name: string
+  profile_image_url: string
   email?: string
 }
 
-export class TwitterAuthService {
+export class TwitterAuth {
   private config: TwitterOAuthConfig
 
   constructor() {
@@ -52,34 +65,52 @@ export class TwitterAuthService {
       .map((key) => `${this.percentEncode(key)}=${this.percentEncode(params[key])}`)
       .join("&")
 
-    const baseString = `${method}&${this.percentEncode(url)}&${this.percentEncode(sortedParams)}`
+    const baseString = [method.toUpperCase(), this.percentEncode(url), this.percentEncode(sortedParams)].join("&")
+
     const signingKey = `${this.percentEncode(this.config.apiSecret)}&${this.percentEncode(tokenSecret)}`
 
     return crypto.createHmac("sha1", signingKey).update(baseString).digest("base64")
   }
 
-  async getRequestToken(): Promise<{ token: string; tokenSecret: string; authUrl: string }> {
-    const url = "https://api.twitter.com/oauth/request_token"
-    const nonce = this.generateNonce()
-    const timestamp = this.generateTimestamp()
-
-    const params = {
-      oauth_callback: this.config.callbackUrl,
+  private generateAuthHeader(
+    method: string,
+    url: string,
+    params: Record<string, string>,
+    tokenSecret = "",
+    token = "",
+  ): string {
+    const oauthParams: Record<string, string> = {
       oauth_consumer_key: this.config.apiKey,
-      oauth_nonce: nonce,
+      oauth_nonce: this.generateNonce(),
       oauth_signature_method: "HMAC-SHA1",
-      oauth_timestamp: timestamp,
+      oauth_timestamp: this.generateTimestamp(),
       oauth_version: "1.0",
+      ...params,
     }
 
-    const signature = this.generateSignature("POST", url, params)
-    params["oauth_signature"] = signature
+    if (token) {
+      oauthParams.oauth_token = token
+    }
 
-    const authHeader =
-      "OAuth " +
-      Object.keys(params)
-        .map((key) => `${this.percentEncode(key)}="${this.percentEncode(params[key])}"`)
-        .join(", ")
+    const signature = this.generateSignature(method, url, oauthParams, tokenSecret)
+    oauthParams.oauth_signature = signature
+
+    const authParams = Object.keys(oauthParams)
+      .filter((key) => key.startsWith("oauth_"))
+      .sort()
+      .map((key) => `${this.percentEncode(key)}="${this.percentEncode(oauthParams[key])}"`)
+      .join(", ")
+
+    return `OAuth ${authParams}`
+  }
+
+  async getRequestToken(): Promise<TwitterRequestToken> {
+    const url = "https://api.twitter.com/oauth/request_token"
+    const params = {
+      oauth_callback: this.config.callbackUrl,
+    }
+
+    const authHeader = this.generateAuthHeader("POST", url, params)
 
     try {
       const response = await fetch(url, {
@@ -91,23 +122,16 @@ export class TwitterAuthService {
       })
 
       if (!response.ok) {
-        throw new Error(`Twitter API error: ${response.status}`)
+        throw new Error(`Twitter API error: ${response.status} ${response.statusText}`)
       }
 
-      const data = await response.text()
-      const parsed = new URLSearchParams(data)
-
-      const token = parsed.get("oauth_token")
-      const tokenSecret = parsed.get("oauth_token_secret")
-
-      if (!token || !tokenSecret) {
-        throw new Error("Failed to get request token from Twitter")
-      }
+      const responseText = await response.text()
+      const params_parsed = new URLSearchParams(responseText)
 
       return {
-        token,
-        tokenSecret,
-        authUrl: `https://api.twitter.com/oauth/authenticate?oauth_token=${token}`,
+        oauth_token: params_parsed.get("oauth_token") || "",
+        oauth_token_secret: params_parsed.get("oauth_token_secret") || "",
+        oauth_callback_confirmed: params_parsed.get("oauth_callback_confirmed") || "",
       }
     } catch (error) {
       console.error("Error getting request token:", error)
@@ -115,33 +139,21 @@ export class TwitterAuthService {
     }
   }
 
+  getAuthorizationUrl(requestToken: string): string {
+    return `https://api.twitter.com/oauth/authorize?oauth_token=${requestToken}`
+  }
+
   async getAccessToken(
     requestToken: string,
     requestTokenSecret: string,
     verifier: string,
-  ): Promise<{ token: string; tokenSecret: string; userId: string; screenName: string }> {
+  ): Promise<TwitterAccessToken> {
     const url = "https://api.twitter.com/oauth/access_token"
-    const nonce = this.generateNonce()
-    const timestamp = this.generateTimestamp()
-
     const params = {
-      oauth_consumer_key: this.config.apiKey,
-      oauth_nonce: nonce,
-      oauth_signature_method: "HMAC-SHA1",
-      oauth_timestamp: timestamp,
-      oauth_token: requestToken,
       oauth_verifier: verifier,
-      oauth_version: "1.0",
     }
 
-    const signature = this.generateSignature("POST", url, params, requestTokenSecret)
-    params["oauth_signature"] = signature
-
-    const authHeader =
-      "OAuth " +
-      Object.keys(params)
-        .map((key) => `${this.percentEncode(key)}="${this.percentEncode(params[key])}"`)
-        .join(", ")
+    const authHeader = this.generateAuthHeader("POST", url, params, requestTokenSecret, requestToken)
 
     try {
       const response = await fetch(url, {
@@ -153,17 +165,17 @@ export class TwitterAuthService {
       })
 
       if (!response.ok) {
-        throw new Error(`Twitter API error: ${response.status}`)
+        throw new Error(`Twitter API error: ${response.status} ${response.statusText}`)
       }
 
-      const data = await response.text()
-      const parsed = new URLSearchParams(data)
+      const responseText = await response.text()
+      const params_parsed = new URLSearchParams(responseText)
 
       return {
-        token: parsed.get("oauth_token") || "",
-        tokenSecret: parsed.get("oauth_token_secret") || "",
-        userId: parsed.get("user_id") || "",
-        screenName: parsed.get("screen_name") || "",
+        oauth_token: params_parsed.get("oauth_token") || "",
+        oauth_token_secret: params_parsed.get("oauth_token_secret") || "",
+        user_id: params_parsed.get("user_id") || "",
+        screen_name: params_parsed.get("screen_name") || "",
       }
     } catch (error) {
       console.error("Error getting access token:", error)
@@ -173,28 +185,11 @@ export class TwitterAuthService {
 
   async getUserInfo(accessToken: string, accessTokenSecret: string): Promise<TwitterUser> {
     const url = "https://api.twitter.com/1.1/account/verify_credentials.json"
-    const nonce = this.generateNonce()
-    const timestamp = this.generateTimestamp()
-
     const params = {
-      oauth_consumer_key: this.config.apiKey,
-      oauth_nonce: nonce,
-      oauth_signature_method: "HMAC-SHA1",
-      oauth_timestamp: timestamp,
-      oauth_token: accessToken,
-      oauth_version: "1.0",
       include_email: "true",
     }
 
-    const signature = this.generateSignature("GET", url, params, accessTokenSecret)
-    params["oauth_signature"] = signature
-
-    const authHeader =
-      "OAuth " +
-      Object.keys(params)
-        .filter((key) => key !== "include_email")
-        .map((key) => `${this.percentEncode(key)}="${this.percentEncode(params[key])}"`)
-        .join(", ")
+    const authHeader = this.generateAuthHeader("GET", url, params, accessTokenSecret, accessToken)
 
     try {
       const response = await fetch(`${url}?include_email=true`, {
@@ -205,17 +200,17 @@ export class TwitterAuthService {
       })
 
       if (!response.ok) {
-        throw new Error(`Twitter API error: ${response.status}`)
+        throw new Error(`Twitter API error: ${response.status} ${response.statusText}`)
       }
 
-      const userData = await response.json()
+      const user = await response.json()
 
       return {
-        id: userData.id_str,
-        username: userData.screen_name,
-        name: userData.name,
-        profile_image_url: userData.profile_image_url_https,
-        email: userData.email,
+        id: user.id_str,
+        name: user.name,
+        screen_name: user.screen_name,
+        profile_image_url: user.profile_image_url_https,
+        email: user.email,
       }
     } catch (error) {
       console.error("Error getting user info:", error)
@@ -224,4 +219,4 @@ export class TwitterAuthService {
   }
 }
 
-export const twitterAuth = new TwitterAuthService()
+export const twitterAuth = new TwitterAuth()

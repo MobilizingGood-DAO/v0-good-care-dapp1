@@ -1,9 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { twitterAuth } from "@/lib/twitter-auth"
-import { avaCloudTwitterService } from "@/lib/avacloud-twitter-integration"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+import { avaCloudTwitterIntegration } from "@/lib/avacloud-twitter-integration"
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,99 +11,42 @@ export async function GET(request: NextRequest) {
 
     console.log("Twitter callback received:", { oauthToken, oauthVerifier, denied })
 
+    // Check if user denied access
     if (denied) {
-      console.log("User denied Twitter authorization")
-      const errorUrl = new URL("/login", request.url)
-      errorUrl.searchParams.set("error", "twitter_denied")
-      return NextResponse.redirect(errorUrl)
+      console.log("User denied Twitter access")
+      return NextResponse.redirect(new URL("/login?error=access_denied", request.url))
     }
 
+    // Validate required parameters
     if (!oauthToken || !oauthVerifier) {
-      console.error("Missing OAuth parameters")
-      const errorUrl = new URL("/login", request.url)
-      errorUrl.searchParams.set("error", "missing_oauth_params")
-      return NextResponse.redirect(errorUrl)
+      console.error("Missing required OAuth parameters")
+      return NextResponse.redirect(new URL("/login?error=invalid_request", request.url))
     }
 
-    // Get the token secret from the cookie
-    const tokenSecret = request.cookies.get("twitter_token_secret")?.value
-    if (!tokenSecret) {
-      console.error("Missing token secret from cookie")
-      const errorUrl = new URL("/login", request.url)
-      errorUrl.searchParams.set("error", "missing_token_secret")
-      return NextResponse.redirect(errorUrl)
+    // Get stored token secret from cookies
+    const tokenSecret = request.cookies.get("twitter_oauth_token_secret")?.value
+    const storedToken = request.cookies.get("twitter_oauth_token")?.value
+
+    if (!tokenSecret || !storedToken || storedToken !== oauthToken) {
+      console.error("Invalid or missing token secret")
+      return NextResponse.redirect(new URL("/login?error=invalid_token", request.url))
     }
 
-    console.log("Getting access token...")
-    const accessTokenData = await twitterAuth.getAccessToken(oauthToken, tokenSecret, oauthVerifier)
+    // Exchange for access token
+    console.log("Exchanging for access token...")
+    const accessToken = await twitterAuth.getAccessToken(oauthToken, tokenSecret, oauthVerifier)
 
-    console.log("Getting user info...")
-    const twitterUser = await twitterAuth.getUserInfo(accessTokenData.token, accessTokenData.tokenSecret)
+    console.log("Got access token for user:", accessToken.screen_name)
 
-    console.log("Twitter user data:", twitterUser)
+    // Get user information
+    const twitterUser = await twitterAuth.getUserInfo(accessToken.oauth_token, accessToken.oauth_token_secret)
 
-    // Create embedded wallet with AvaCloud
-    console.log("Creating embedded wallet...")
-    const wallet = await avaCloudTwitterService.createEmbeddedWallet(twitterUser)
+    console.log("Got Twitter user info:", twitterUser.screen_name)
 
-    console.log("Wallet created:", wallet)
+    // Process login with AvaCloud integration
+    const userProfile = await avaCloudTwitterIntegration.processTwitterLogin(twitterUser)
 
-    // Store user in Supabase
-    const { data: existingUser, error: fetchError } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("twitter_id", twitterUser.id)
-      .single()
-
-    let userData
-    if (existingUser) {
-      // Update existing user
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .update({
-          username: twitterUser.username,
-          display_name: twitterUser.name,
-          avatar_url: twitterUser.profile_image_url,
-          wallet_address: wallet.address,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("twitter_id", twitterUser.id)
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Error updating user:", error)
-        throw error
-      }
-      userData = data
-    } else {
-      // Create new user
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .insert({
-          twitter_id: twitterUser.id,
-          username: twitterUser.username,
-          display_name: twitterUser.name,
-          email: twitterUser.email,
-          avatar_url: twitterUser.profile_image_url,
-          wallet_address: wallet.address,
-          self_care_points: 0,
-          community_points: 0,
-          streak_count: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Error creating user:", error)
-        throw error
-      }
-      userData = data
-    }
-
-    console.log("User stored in Supabase:", userData)
+    console.log("Processed Twitter login, created user profile:", userProfile.id)
 
     // Create session
     const response = NextResponse.redirect(new URL("/dashboard", request.url))
@@ -115,30 +55,29 @@ export async function GET(request: NextRequest) {
     response.cookies.set(
       "user_session",
       JSON.stringify({
-        id: userData.id,
-        twitter_id: twitterUser.id,
-        username: twitterUser.username,
-        display_name: twitterUser.name,
-        wallet_address: wallet.address,
+        userId: userProfile.id,
+        twitterId: userProfile.twitter_id,
+        username: userProfile.username,
+        displayName: userProfile.display_name,
+        avatarUrl: userProfile.avatar_url,
+        walletAddress: userProfile.wallet_address,
+        walletId: userProfile.wallet_id,
       }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 86400 * 7, // 7 days
+        maxAge: 60 * 60 * 24 * 7, // 7 days
       },
     )
 
-    // Clear the temporary token secret cookie
-    response.cookies.delete("twitter_token_secret")
+    // Clear OAuth cookies
+    response.cookies.delete("twitter_oauth_token_secret")
+    response.cookies.delete("twitter_oauth_token")
 
     return response
   } catch (error) {
-    console.error("Twitter callback error:", error)
-
-    const errorUrl = new URL("/login", request.url)
-    errorUrl.searchParams.set("error", "twitter_callback_failed")
-
-    return NextResponse.redirect(errorUrl)
+    console.error("Error in Twitter OAuth callback:", error)
+    return NextResponse.redirect(new URL("/login?error=oauth_error", request.url))
   }
 }

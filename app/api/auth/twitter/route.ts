@@ -3,28 +3,33 @@ import { twitterAuth } from "@/lib/twitter-auth"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Starting Twitter OAuth flow...")
+    console.log("Initiating Twitter OAuth flow...")
 
-    const { token, tokenSecret, authUrl } = await twitterAuth.getRequestToken()
+    // Get request token from Twitter
+    const requestToken = await twitterAuth.getRequestToken()
 
-    console.log("Got request token:", { token, authUrl })
+    console.log("Got request token:", requestToken.oauth_token)
 
-    // Store the token secret in a secure cookie for the callback
-    const response = NextResponse.redirect(authUrl)
-    response.cookies.set("twitter_token_secret", tokenSecret, {
+    // Store request token secret in session (using cookies for simplicity)
+    const response = NextResponse.redirect(twitterAuth.getAuthorizationUrl(requestToken.oauth_token))
+
+    response.cookies.set("twitter_oauth_token_secret", requestToken.oauth_token_secret, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 600, // 10 minutes
+      maxAge: 60 * 15, // 15 minutes
+    })
+
+    response.cookies.set("twitter_oauth_token", requestToken.oauth_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 15, // 15 minutes
     })
 
     return response
   } catch (error) {
-    console.error("Twitter OAuth initiation error:", error)
-
-    const errorUrl = new URL("/login", request.url)
-    errorUrl.searchParams.set("error", "twitter_oauth_failed")
-
-    return NextResponse.redirect(errorUrl)
+    console.error("Error in Twitter OAuth initiation:", error)
+    return NextResponse.json({ error: "Failed to initiate Twitter OAuth" }, { status: 500 })
   }
 }

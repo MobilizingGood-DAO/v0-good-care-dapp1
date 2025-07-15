@@ -1,148 +1,158 @@
+import { createClient } from "@supabase/supabase-js"
+
 interface AvaCloudWallet {
+  walletId: string
   address: string
-  privateKey?: string
-  publicKey: string
-  chainId: number
+  chainId: string
+  balance: string
 }
 
 interface TwitterUser {
   id: string
-  username: string
   name: string
-  profile_image_url?: string
+  screen_name: string
+  profile_image_url: string
   email?: string
 }
 
-export class AvaCloudTwitterService {
-  private apiKey: string
-  private projectId: string
-  private baseUrl: string
+interface UserProfile {
+  id: string
+  twitter_id: string
+  username: string
+  display_name: string
+  email?: string
+  avatar_url: string
+  wallet_address: string
+  wallet_id: string
+  created_at: string
+  updated_at: string
+}
+
+export class AvaCloudTwitterIntegration {
+  private supabase
+  private avaCloudApiKey: string
+  private avaCloudProjectId: string
 
   constructor() {
-    this.apiKey =
+    this.supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    this.avaCloudApiKey =
       process.env.AVACLOUD_API_KEY ||
       "ac_IGPLXu_LC7RmwOlFRcSUfOYanSuTzMbjXFLJG97yz3MUgN0woln5uWB0yZrEDlwvpnKkz_2-P9igfE6KdipsEw"
-    this.projectId = process.env.NEXT_PUBLIC_AVACLOUD_PROJECT_ID || "your_project_id"
-    this.baseUrl = "https://api.avacloud.io/v1"
+    this.avaCloudProjectId = process.env.NEXT_PUBLIC_AVACLOUD_PROJECT_ID || "your_project_id_here"
   }
 
   async createEmbeddedWallet(twitterUser: TwitterUser): Promise<AvaCloudWallet> {
     try {
-      // For now, return a mock wallet - replace with actual AvaCloud API call
+      // For now, we'll create a mock wallet since AvaCloud integration needs proper setup
+      // In production, this would call the actual AvaCloud API
       const mockWallet: AvaCloudWallet = {
-        address: `0x${Math.random().toString(16).substr(2, 40)}`,
-        publicKey: `0x${Math.random().toString(16).substr(2, 64)}`,
-        chainId: 43114, // Avalanche mainnet
+        walletId: `wallet_${twitterUser.id}_${Date.now()}`,
+        address: `0x${crypto.randomUUID().replace(/-/g, "").substring(0, 40)}`,
+        chainId: "43114", // Avalanche mainnet
+        balance: "0",
       }
 
       console.log("Created embedded wallet for Twitter user:", {
         twitterId: twitterUser.id,
-        username: twitterUser.username,
-        walletAddress: mockWallet.address,
+        walletId: mockWallet.walletId,
+        address: mockWallet.address,
       })
 
       return mockWallet
-
-      // Actual AvaCloud API call would look like this:
-      /*
-      const response = await fetch(`${this.baseUrl}/wallets`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          projectId: this.projectId,
-          userId: twitterUser.id,
-          userInfo: {
-            username: twitterUser.username,
-            name: twitterUser.name,
-            email: twitterUser.email,
-            profileImage: twitterUser.profile_image_url
-          },
-          chainId: 43114
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`AvaCloud API error: ${response.status}`);
-      }
-
-      return await response.json();
-      */
     } catch (error) {
       console.error("Error creating embedded wallet:", error)
       throw error
     }
   }
 
-  async getWalletBalance(address: string): Promise<{ balance: string; symbol: string }> {
+  async createOrUpdateUserProfile(twitterUser: TwitterUser, wallet: AvaCloudWallet): Promise<UserProfile> {
     try {
-      // Mock balance for now
-      return {
-        balance: (Math.random() * 1000).toFixed(2),
-        symbol: "AVAX",
+      // Check if user already exists
+      const { data: existingUser } = await this.supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("twitter_id", twitterUser.id)
+        .single()
+
+      const userProfile = {
+        twitter_id: twitterUser.id,
+        username: twitterUser.screen_name,
+        display_name: twitterUser.name,
+        email: twitterUser.email,
+        avatar_url: twitterUser.profile_image_url,
+        wallet_address: wallet.address,
+        wallet_id: wallet.walletId,
+        updated_at: new Date().toISOString(),
       }
 
-      // Actual API call would be:
-      /*
-      const response = await fetch(`${this.baseUrl}/wallets/${address}/balance`, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`
-        }
-      });
+      if (existingUser) {
+        // Update existing user
+        const { data, error } = await this.supabase
+          .from("user_profiles")
+          .update(userProfile)
+          .eq("twitter_id", twitterUser.id)
+          .select()
+          .single()
 
-      if (!response.ok) {
-        throw new Error(`AvaCloud API error: ${response.status}`);
+        if (error) throw error
+        return data
+      } else {
+        // Create new user
+        const { data, error } = await this.supabase
+          .from("user_profiles")
+          .insert({
+            ...userProfile,
+            created_at: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+        return data
       }
-
-      return await response.json();
-      */
     } catch (error) {
-      console.error("Error getting wallet balance:", error)
+      console.error("Error creating/updating user profile:", error)
       throw error
     }
   }
 
-  async sendTransaction(
-    fromAddress: string,
-    toAddress: string,
-    amount: string,
-  ): Promise<{ txHash: string; status: string }> {
+  async processTwitterLogin(twitterUser: TwitterUser): Promise<UserProfile> {
     try {
-      // Mock transaction for now
-      return {
-        txHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-        status: "pending",
-      }
+      console.log("Processing Twitter login for user:", twitterUser.screen_name)
 
-      // Actual API call would be:
-      /*
-      const response = await fetch(`${this.baseUrl}/transactions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: fromAddress,
-          to: toAddress,
-          amount,
-          chainId: 43114
-        })
-      });
+      // Create embedded wallet
+      const wallet = await this.createEmbeddedWallet(twitterUser)
 
-      if (!response.ok) {
-        throw new Error(`AvaCloud API error: ${response.status}`);
-      }
+      // Create or update user profile
+      const userProfile = await this.createOrUpdateUserProfile(twitterUser, wallet)
 
-      return await response.json();
-      */
+      console.log("Successfully processed Twitter login:", {
+        userId: userProfile.id,
+        username: userProfile.username,
+        walletAddress: userProfile.wallet_address,
+      })
+
+      return userProfile
     } catch (error) {
-      console.error("Error sending transaction:", error)
+      console.error("Error processing Twitter login:", error)
       throw error
+    }
+  }
+
+  async getUserProfile(twitterId: string): Promise<UserProfile | null> {
+    try {
+      const { data, error } = await this.supabase.from("user_profiles").select("*").eq("twitter_id", twitterId).single()
+
+      if (error && error.code !== "PGRST116") {
+        throw error
+      }
+
+      return data
+    } catch (error) {
+      console.error("Error getting user profile:", error)
+      return null
     }
   }
 }
 
-export const avaCloudTwitterService = new AvaCloudTwitterService()
+export const avaCloudTwitterIntegration = new AvaCloudTwitterIntegration()
