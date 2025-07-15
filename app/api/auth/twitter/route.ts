@@ -3,9 +3,11 @@ import { twitterAuth } from "@/lib/twitter-auth"
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Initiating Twitter OAuth flow...")
+    console.log("Starting Twitter OAuth flow...")
 
     const { token, tokenSecret, authUrl } = await twitterAuth.getRequestToken()
+
+    console.log("Got request token:", { token, authUrl })
 
     // Store the token secret in a secure cookie for the callback
     const response = NextResponse.redirect(authUrl)
@@ -16,11 +18,13 @@ export async function GET(request: NextRequest) {
       maxAge: 600, // 10 minutes
     })
 
-    console.log("Twitter OAuth initiated, redirecting to:", authUrl)
     return response
   } catch (error) {
-    console.error("Error initiating Twitter OAuth:", error)
+    console.error("Twitter OAuth initiation error:", error)
 
-    return NextResponse.json({ error: "Failed to initiate Twitter authentication" }, { status: 500 })
+    const errorUrl = new URL("/login", request.url)
+    errorUrl.searchParams.set("error", "twitter_oauth_failed")
+
+    return NextResponse.redirect(errorUrl)
   }
 }

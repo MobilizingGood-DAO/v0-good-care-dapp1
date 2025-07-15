@@ -8,13 +8,14 @@ export function TwitterLoginButton() {
   const [isLoading, setIsLoading] = useState(false)
 
   const handleTwitterLogin = async () => {
-    setIsLoading(true)
-
     try {
+      setIsLoading(true)
+      console.log("Initiating Twitter login...")
+
       // Redirect to Twitter OAuth endpoint
       window.location.href = "/api/auth/twitter"
     } catch (error) {
-      console.error("Error initiating Twitter login:", error)
+      console.error("Twitter login error:", error)
       setIsLoading(false)
     }
   }
@@ -23,11 +24,19 @@ export function TwitterLoginButton() {
     <Button
       onClick={handleTwitterLogin}
       disabled={isLoading}
-      className="w-full bg-[#1DA1F2] hover:bg-[#1a91da] text-white"
-      size="lg"
+      className="w-full bg-[#1DA1F2] hover:bg-[#1a91da] text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-3"
     >
-      <Twitter className="mr-2 h-5 w-5" />
-      {isLoading ? "Connecting..." : "Continue with Twitter"}
+      {isLoading ? (
+        <>
+          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          Connecting to Twitter...
+        </>
+      ) : (
+        <>
+          <Twitter className="w-5 h-5" />
+          Continue with Twitter
+        </>
+      )}
     </Button>
   )
 }

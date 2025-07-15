@@ -1,106 +1,114 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { TwitterLoginButton } from "@/components/twitter-login-button"
-import { Heart, Shield, Zap } from "lucide-react"
+import { TwitterOnboarding } from "@/components/auth/twitter-onboarding"
+import { Heart, AlertCircle } from "lucide-react"
 
-export default function LoginPage() {
-  const [error, setError] = useState<string | null>(null)
+function LoginContent() {
   const searchParams = useSearchParams()
+  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
     const errorParam = searchParams.get("error")
     if (errorParam) {
       switch (errorParam) {
-        case "access_denied":
-          setError("Twitter access was denied. Please try again.")
+        case "twitter_oauth_failed":
+          setError("Failed to connect to Twitter. Please try again.")
           break
-        case "missing_params":
-          setError("Authentication failed. Please try again.")
+        case "twitter_denied":
+          setError("Twitter authorization was denied. Please try again to continue.")
+          break
+        case "missing_oauth_params":
+          setError("Invalid Twitter response. Please try again.")
           break
         case "missing_token_secret":
           setError("Session expired. Please try again.")
           break
-        case "auth_failed":
-          setError("Authentication failed. Please try again.")
+        case "twitter_callback_failed":
+          setError("Failed to complete Twitter login. Please try again.")
           break
         default:
-          setError("An error occurred during authentication.")
+          setError("An error occurred during login. Please try again.")
       }
     }
+
+    // Check if user is already logged in
+    const checkSession = async () => {
+      try {
+        const response = await fetch("/api/auth/me")
+        if (response.ok) {
+          const userData = await response.json()
+          setUser(userData)
+        }
+      } catch (error) {
+        console.error("Error checking session:", error)
+      }
+    }
+
+    checkSession()
   }, [searchParams])
 
+  if (user) {
+    return <TwitterOnboarding user={user} />
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
       <div className="w-full max-w-md space-y-6">
-        {/* Header */}
         <div className="text-center space-y-2">
-          <div className="flex items-center justify-center space-x-2">
-            <Heart className="h-8 w-8 text-green-600" />
-            <h1 className="text-3xl font-bold text-gray-900">GOOD CARE</h1>
+          <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Heart className="w-8 h-8 text-white" />
           </div>
-          <p className="text-gray-600">Join the regenerative crypto experience</p>
+          <h1 className="text-3xl font-bold text-gray-900">GOOD CARE</h1>
+          <p className="text-gray-600">Your journey to better mental health starts here</p>
         </div>
 
-        {/* Error Alert */}
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* Login Card */}
         <Card>
           <CardHeader className="text-center">
             <CardTitle>Welcome Back</CardTitle>
-            <CardDescription>Sign in with Twitter to access your GOOD Passport and embedded wallet</CardDescription>
+            <CardDescription>
+              Sign in with Twitter to access your embedded wallet and continue your care journey
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
             <TwitterLoginButton />
 
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">
-                New to GOOD CARE? Signing in will create your account automatically.
-              </p>
+            <div className="text-center text-sm text-gray-500">
+              By continuing, you agree to our Terms of Service and Privacy Policy
             </div>
           </CardContent>
         </Card>
 
-        {/* Features */}
-        <div className="grid grid-cols-1 gap-4">
-          <div className="flex items-center space-x-3 p-3 bg-white rounded-lg shadow-sm">
-            <Shield className="h-5 w-5 text-blue-600" />
-            <div>
-              <h3 className="font-medium text-sm">Secure Embedded Wallet</h3>
-              <p className="text-xs text-muted-foreground">Powered by AvaCloud WaaS technology</p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-3 p-3 bg-white rounded-lg shadow-sm">
-            <Zap className="h-5 w-5 text-yellow-600" />
-            <div>
-              <h3 className="font-medium text-sm">Instant Access</h3>
-              <p className="text-xs text-muted-foreground">One-click login with your Twitter account</p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-3 p-3 bg-white rounded-lg shadow-sm">
-            <Heart className="h-5 w-5 text-green-600" />
-            <div>
-              <h3 className="font-medium text-sm">Care-Focused Network</h3>
-              <p className="text-xs text-muted-foreground">Earn rewards for self-care and community support</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="text-center text-xs text-muted-foreground">
-          <p>By signing in, you agree to our Terms of Service and Privacy Policy.</p>
+        <div className="text-center text-sm text-gray-500">
+          <p>New to GOOD CARE? Your account will be created automatically.</p>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   )
 }

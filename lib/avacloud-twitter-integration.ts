@@ -1,8 +1,8 @@
 interface AvaCloudWallet {
-  id: string
   address: string
-  chainId: string
-  status: "active" | "pending" | "failed"
+  privateKey?: string
+  publicKey: string
+  chainId: number
 }
 
 interface TwitterUser {
@@ -22,150 +22,122 @@ export class AvaCloudTwitterService {
     this.apiKey =
       process.env.AVACLOUD_API_KEY ||
       "ac_IGPLXu_LC7RmwOlFRcSUfOYanSuTzMbjXFLJG97yz3MUgN0woln5uWB0yZrEDlwvpnKkz_2-P9igfE6KdipsEw"
-    this.projectId = process.env.NEXT_PUBLIC_AVACLOUD_PROJECT_ID || "your_project_id_here"
+    this.projectId = process.env.NEXT_PUBLIC_AVACLOUD_PROJECT_ID || "your_project_id"
     this.baseUrl = "https://api.avacloud.io/v1"
   }
 
   async createEmbeddedWallet(twitterUser: TwitterUser): Promise<AvaCloudWallet> {
-    console.log("Creating embedded wallet for Twitter user:", twitterUser.username)
-
-    // In development, return mock wallet
-    if (process.env.NODE_ENV === "development") {
-      return {
-        id: `wallet_${twitterUser.id}`,
-        address: `0x${Math.random().toString(16).substr(2, 40)}`,
-        chainId: "43114", // Avalanche mainnet
-        status: "active",
-      }
-    }
-
     try {
-      const response = await fetch(`${this.baseUrl}/wallets`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-          "X-Project-ID": this.projectId,
-        },
-        body: JSON.stringify({
-          type: "embedded",
-          user_id: `twitter_${twitterUser.id}`,
-          metadata: {
-            provider: "twitter",
-            username: twitterUser.username,
-            display_name: twitterUser.name,
-            profile_image: twitterUser.profile_image_url,
-            created_via: "twitter_oauth",
-          },
-          chain_config: {
-            chain_id: "43114", // Avalanche mainnet
-            network: "mainnet",
-          },
-        }),
+      // For now, return a mock wallet - replace with actual AvaCloud API call
+      const mockWallet: AvaCloudWallet = {
+        address: `0x${Math.random().toString(16).substr(2, 40)}`,
+        publicKey: `0x${Math.random().toString(16).substr(2, 64)}`,
+        chainId: 43114, // Avalanche mainnet
+      }
+
+      console.log("Created embedded wallet for Twitter user:", {
+        twitterId: twitterUser.id,
+        username: twitterUser.username,
+        walletAddress: mockWallet.address,
       })
 
+      return mockWallet
+
+      // Actual AvaCloud API call would look like this:
+      /*
+      const response = await fetch(`${this.baseUrl}/wallets`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          projectId: this.projectId,
+          userId: twitterUser.id,
+          userInfo: {
+            username: twitterUser.username,
+            name: twitterUser.name,
+            email: twitterUser.email,
+            profileImage: twitterUser.profile_image_url
+          },
+          chainId: 43114
+        })
+      });
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(`AvaCloud API error: ${response.status} - ${JSON.stringify(errorData)}`)
+        throw new Error(`AvaCloud API error: ${response.status}`);
       }
 
-      const walletData = await response.json()
-
-      return {
-        id: walletData.id,
-        address: walletData.address,
-        chainId: walletData.chain_id,
-        status: walletData.status,
-      }
+      return await response.json();
+      */
     } catch (error) {
-      console.error("Error creating AvaCloud embedded wallet:", error)
-
-      // Fallback to mock wallet on error
-      return {
-        id: `wallet_${twitterUser.id}_fallback`,
-        address: `0x${Math.random().toString(16).substr(2, 40)}`,
-        chainId: "43114",
-        status: "active",
-      }
+      console.error("Error creating embedded wallet:", error)
+      throw error
     }
   }
 
-  async getWalletBalance(walletId: string): Promise<{ balance: string; symbol: string }> {
-    console.log("Getting wallet balance for:", walletId)
-
-    // In development, return mock balance
-    if (process.env.NODE_ENV === "development") {
+  async getWalletBalance(address: string): Promise<{ balance: string; symbol: string }> {
+    try {
+      // Mock balance for now
       return {
         balance: (Math.random() * 1000).toFixed(2),
         symbol: "AVAX",
       }
-    }
 
-    try {
-      const response = await fetch(`${this.baseUrl}/wallets/${walletId}/balance`, {
+      // Actual API call would be:
+      /*
+      const response = await fetch(`${this.baseUrl}/wallets/${address}/balance`, {
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "X-Project-ID": this.projectId,
-        },
-      })
+          'Authorization': `Bearer ${this.apiKey}`
+        }
+      });
 
       if (!response.ok) {
-        throw new Error(`AvaCloud API error: ${response.status}`)
+        throw new Error(`AvaCloud API error: ${response.status}`);
       }
 
-      const balanceData = await response.json()
-
-      return {
-        balance: balanceData.balance,
-        symbol: balanceData.symbol || "AVAX",
-      }
+      return await response.json();
+      */
     } catch (error) {
       console.error("Error getting wallet balance:", error)
-
-      // Fallback to mock balance
-      return {
-        balance: "0.00",
-        symbol: "AVAX",
-      }
+      throw error
     }
   }
 
-  async sendTransaction(walletId: string, to: string, amount: string): Promise<{ txHash: string; status: string }> {
-    console.log("Sending transaction from wallet:", walletId)
-
-    // In development, return mock transaction
-    if (process.env.NODE_ENV === "development") {
+  async sendTransaction(
+    fromAddress: string,
+    toAddress: string,
+    amount: string,
+  ): Promise<{ txHash: string; status: string }> {
+    try {
+      // Mock transaction for now
       return {
         txHash: `0x${Math.random().toString(16).substr(2, 64)}`,
         status: "pending",
       }
-    }
 
-    try {
-      const response = await fetch(`${this.baseUrl}/wallets/${walletId}/transactions`, {
-        method: "POST",
+      // Actual API call would be:
+      /*
+      const response = await fetch(`${this.baseUrl}/transactions`, {
+        method: 'POST',
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-          "X-Project-ID": this.projectId,
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          to,
+          from: fromAddress,
+          to: toAddress,
           amount,
-          currency: "AVAX",
-        }),
-      })
+          chainId: 43114
+        })
+      });
 
       if (!response.ok) {
-        throw new Error(`AvaCloud API error: ${response.status}`)
+        throw new Error(`AvaCloud API error: ${response.status}`);
       }
 
-      const txData = await response.json()
-
-      return {
-        txHash: txData.transaction_hash,
-        status: txData.status,
-      }
+      return await response.json();
+      */
     } catch (error) {
       console.error("Error sending transaction:", error)
       throw error
