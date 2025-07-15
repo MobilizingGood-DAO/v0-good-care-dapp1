@@ -19,18 +19,9 @@ const nextConfig = {
         fs: false,
         net: false,
         tls: false,
+        crypto: false,
       };
     }
-    
-    // Handle worker files
-    config.module.rules.push({
-      test: /\.worker\.js$/,
-      loader: 'worker-loader',
-      options: { 
-        type: 'module',
-        publicPath: '/_next/static/workers/'
-      },
-    });
     
     return config;
   },

@@ -2,128 +2,159 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { TwitterLoginButton } from "@/components/twitter-login-button"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, AlertCircle, Wallet, Twitter, Sparkles } from "lucide-react"
-import { useSearchParams } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
+import { Wallet, Twitter, CheckCircle, Loader2 } from "lucide-react"
 
 interface TwitterOnboardingProps {
-  onComplete?: (user: any) => void
+  user?: {
+    username: string
+    name: string
+    avatar_url?: string
+    wallet_address?: string
+  }
 }
 
-export function TwitterOnboarding({ onComplete }: TwitterOnboardingProps) {
-  const [error, setError] = useState<string | null>(null)
+export function TwitterOnboarding({ user }: TwitterOnboardingProps) {
+  const [currentStep, setCurrentStep] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
-  const searchParams = useSearchParams()
+
+  const steps = [
+    {
+      id: 1,
+      title: "Twitter Connected",
+      description: "Your Twitter account has been successfully linked",
+      icon: Twitter,
+      status: "completed",
+    },
+    {
+      id: 2,
+      title: "Wallet Created",
+      description: "Your embedded wallet has been generated",
+      icon: Wallet,
+      status: user?.wallet_address ? "completed" : "loading",
+    },
+    {
+      id: 3,
+      title: "Ready to Care",
+      description: "Start your journey on the GOOD CARE Network",
+      icon: CheckCircle,
+      status: user?.wallet_address ? "completed" : "pending",
+    },
+  ]
 
   useEffect(() => {
-    // Check for error from callback
-    const errorParam = searchParams?.get("error")
-    if (errorParam) {
-      switch (errorParam) {
-        case "access_denied":
-          setError("You denied access to Twitter. Please try again to continue.")
-          break
-        case "invalid_request":
-          setError("Invalid request. Please try again.")
-          break
-        case "invalid_state":
-          setError("Security error. Please try again.")
-          break
-        case "auth_failed":
-          setError("Authentication failed. Please try again.")
-          break
-        case "server_error":
-          setError("Server error. Please try again later.")
-          break
-        default:
-          setError("An error occurred during authentication. Please try again.")
-      }
+    if (user?.wallet_address) {
+      setCurrentStep(3)
     }
-  }, [searchParams])
+  }, [user])
 
-  const handleTwitterSuccess = (user: any) => {
-    console.log("Twitter login successful:", user)
-    onComplete?.(user)
+  const handleContinue = () => {
+    setIsLoading(true)
+    window.location.href = "/dashboard"
   }
 
-  const handleTwitterError = (error: string) => {
-    setError(error)
-    setIsLoading(false)
+  if (!user) {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardContent className="flex items-center justify-center p-8">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader className="text-center">
-        <div className="text-6xl mb-4">🌱</div>
-        <CardTitle className="text-2xl">Welcome to GOOD CARE</CardTitle>
-        <CardDescription>
-          Connect with Twitter to create your embedded wallet and start your wellness journey
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {/* Benefits */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-            <Twitter className="h-5 w-5 text-blue-600" />
+    <div className="w-full max-w-2xl mx-auto space-y-6">
+      <Card>
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Welcome to GOOD CARE!</CardTitle>
+          <CardDescription>
+            Your account has been set up with Twitter authentication and an embedded wallet
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* User Profile */}
+          <div className="flex items-center space-x-4 p-4 bg-muted rounded-lg">
+            <Avatar className="h-12 w-12">
+              <AvatarImage src={user.avatar_url || "/placeholder.svg"} alt={user.name} />
+              <AvatarFallback>{user.name?.charAt(0) || "U"}</AvatarFallback>
+            </Avatar>
             <div>
-              <p className="font-medium text-sm">Twitter Integration</p>
-              <p className="text-xs text-muted-foreground">Login with your Twitter account</p>
+              <h3 className="font-semibold">{user.name}</h3>
+              <p className="text-sm text-muted-foreground">@{user.username}</p>
             </div>
+            <Badge variant="secondary" className="ml-auto">
+              <Twitter className="h-3 w-3 mr-1" />
+              Connected
+            </Badge>
           </div>
-          <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
-            <Wallet className="h-5 w-5 text-green-600" />
-            <div>
-              <p className="font-medium text-sm">Embedded Wallet</p>
-              <p className="text-xs text-muted-foreground">Automatic wallet creation via AvaCloud</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
-            <Sparkles className="h-5 w-5 text-purple-600" />
-            <div>
-              <p className="font-medium text-sm">GOOD CARE Network</p>
-              <p className="text-xs text-muted-foreground">Join the wellness community</p>
-            </div>
-          </div>
-        </div>
 
-        {/* Twitter Login */}
-        <div className="space-y-4">
-          <TwitterLoginButton onSuccess={handleTwitterSuccess} onError={handleTwitterError} disabled={isLoading} />
+          {/* Setup Steps */}
+          <div className="space-y-4">
+            {steps.map((step) => {
+              const Icon = step.icon
+              const isCompleted = step.status === "completed"
+              const isLoading = step.status === "loading"
+              const isCurrent = step.id === currentStep
 
-          <div className="text-center">
-            <p className="text-xs text-muted-foreground">
-              By continuing, you agree to create an embedded wallet and join the GOOD CARE community
-            </p>
+              return (
+                <div
+                  key={step.id}
+                  className={`flex items-center space-x-4 p-4 rounded-lg border ${
+                    isCompleted
+                      ? "bg-green-50 border-green-200"
+                      : isCurrent
+                        ? "bg-blue-50 border-blue-200"
+                        : "bg-muted border-muted"
+                  }`}
+                >
+                  <div
+                    className={`flex items-center justify-center w-10 h-10 rounded-full ${
+                      isCompleted
+                        ? "bg-green-500 text-white"
+                        : isCurrent
+                          ? "bg-blue-500 text-white"
+                          : "bg-muted-foreground text-muted"
+                    }`}
+                  >
+                    {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-medium">{step.title}</h4>
+                    <p className="text-sm text-muted-foreground">{step.description}</p>
+                  </div>
+                  {isCompleted && <CheckCircle className="h-5 w-5 text-green-500" />}
+                </div>
+              )
+            })}
           </div>
-        </div>
 
-        {/* How it works */}
-        <div className="border-t pt-4">
-          <p className="text-sm font-medium mb-2">How it works:</p>
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-3 w-3 text-green-600" />
-              <span>Connect your Twitter account</span>
+          {/* Wallet Info */}
+          {user.wallet_address && (
+            <div className="p-4 bg-muted rounded-lg">
+              <h4 className="font-medium mb-2">Your Embedded Wallet</h4>
+              <p className="text-sm text-muted-foreground font-mono break-all">{user.wallet_address}</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                This wallet is securely managed by AvaCloud and tied to your Twitter account
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-3 w-3 text-green-600" />
-              <span>AvaCloud creates your embedded wallet</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-3 w-3 text-green-600" />
-              <span>Start earning CARE points and NFTs</span>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+          )}
+
+          {/* Continue Button */}
+          <Button onClick={handleContinue} disabled={!user.wallet_address || isLoading} className="w-full" size="lg">
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              "Continue to Dashboard"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   )
 }

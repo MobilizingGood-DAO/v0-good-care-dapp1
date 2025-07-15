@@ -1,6 +1,8 @@
-interface TwitterAuthConfig {
-  apiKey: string
-  apiKeySecret: string
+import crypto from "crypto"
+
+interface TwitterOAuthConfig {
+  consumerKey: string
+  consumerSecret: string
   accessToken: string
   accessTokenSecret: string
   callbackUrl: string
@@ -10,48 +12,92 @@ interface TwitterUser {
   id: string
   username: string
   name: string
+  profile_image_url?: string
   email?: string
-  profile_image_url: string
-  verified: boolean
 }
 
 export class TwitterAuthService {
-  private config: TwitterAuthConfig
+  private config: TwitterOAuthConfig
 
   constructor() {
     this.config = {
-      apiKey: process.env.TWITTER_API_KEY || "870vfO8m4SvC2eZjl4cBxvVBo",
-      apiKeySecret: process.env.TWITTER_API_KEY_SECRET || "exuCGhtUhVe9tYE1psdwozjIZWLmmpFFh7inVmmqP7Ia0YVbRW",
+      consumerKey: process.env.TWITTER_API_KEY || "870vfO8m4SvC2eZjl4cBxvVBo",
+      consumerSecret: process.env.TWITTER_API_KEY_SECRET || "exuCGhtUhVe9tYE1psdwozjIZWLmmpFFh7inVmmqP7Ia0YVbRW",
       accessToken: process.env.TWITTER_ACCESS_TOKEN || "1734256336139882496-USaYTf5dNTa3nMlxPgDi3uiUSBBuzc",
       accessTokenSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET || "JWa8Eq28j9EzhigzJbLT6zKdoIqI1VOoloahSNbPb4gM3",
-      callbackUrl:
-        process.env.NEXT_PUBLIC_APP_URL + "/auth/twitter/callback" || "http://localhost:3000/auth/twitter/callback",
+      callbackUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/auth/twitter/callback`,
     }
   }
 
-  // Generate Twitter OAuth URL
-  async getAuthUrl(): Promise<{ url: string; oauthToken: string; oauthTokenSecret: string }> {
+  private generateNonce(): string {
+    return crypto.randomBytes(16).toString("hex")
+  }
+
+  private generateTimestamp(): string {
+    return Math.floor(Date.now() / 1000).toString()
+  }
+
+  private percentEncode(str: string): string {
+    return encodeURIComponent(str)
+      .replace(/!/g, "%21")
+      .replace(/'/g, "%27")
+      .replace(/\(/g, "%28")
+      .replace(/\)/g, "%29")
+      .replace(/\*/g, "%2A")
+  }
+
+  private generateSignature(method: string, url: string, params: Record<string, string>): string {
+    const sortedParams = Object.keys(params)
+      .sort()
+      .map((key) => `${this.percentEncode(key)}=${this.percentEncode(params[key])}`)
+      .join("&")
+
+    const signatureBaseString = `${method}&${this.percentEncode(url)}&${this.percentEncode(sortedParams)}`
+    const signingKey = `${this.percentEncode(this.config.consumerSecret)}&${this.percentEncode(this.config.accessTokenSecret)}`
+
+    return crypto.createHmac("sha1", signingKey).update(signatureBaseString).digest("base64")
+  }
+
+  private generateAuthHeader(method: string, url: string, additionalParams: Record<string, string> = {}): string {
+    const oauthParams = {
+      oauth_consumer_key: this.config.consumerKey,
+      oauth_nonce: this.generateNonce(),
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp: this.generateTimestamp(),
+      oauth_token: this.config.accessToken,
+      oauth_version: "1.0",
+      ...additionalParams,
+    }
+
+    const signature = this.generateSignature(method, url, oauthParams)
+    oauthParams.oauth_signature = signature
+
+    const authHeader =
+      "OAuth " +
+      Object.keys(oauthParams)
+        .sort()
+        .map((key) => `${this.percentEncode(key)}="${this.percentEncode(oauthParams[key])}"`)
+        .join(", ")
+
+    return authHeader
+  }
+
+  async getRequestToken(): Promise<{ token: string; tokenSecret: string; authUrl: string }> {
+    const url = "https://api.twitter.com/oauth/request_token"
+    const params = {
+      oauth_callback: this.config.callbackUrl,
+      oauth_consumer_key: this.config.consumerKey,
+      oauth_nonce: this.generateNonce(),
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp: this.generateTimestamp(),
+      oauth_version: "1.0",
+    }
+
+    const signature = this.generateSignature("POST", url, params)
+    const authHeader = `OAuth oauth_callback="${this.percentEncode(this.config.callbackUrl)}", oauth_consumer_key="${this.config.consumerKey}", oauth_nonce="${params.oauth_nonce}", oauth_signature="${this.percentEncode(signature)}", oauth_signature_method="HMAC-SHA1", oauth_timestamp="${params.oauth_timestamp}", oauth_version="1.0"`
+
     try {
-      // Step 1: Get request token
-      const requestTokenUrl = "https://api.twitter.com/oauth/request_token"
-      const oauthNonce = this.generateNonce()
-      const oauthTimestamp = Math.floor(Date.now() / 1000).toString()
-
-      const oauthParams = {
-        oauth_callback: this.config.callbackUrl,
-        oauth_consumer_key: this.config.apiKey,
-        oauth_nonce: oauthNonce,
-        oauth_signature_method: "HMAC-SHA1",
-        oauth_timestamp: oauthTimestamp,
-        oauth_version: "1.0",
-      }
-
-      const signature = this.generateSignature("POST", requestTokenUrl, oauthParams, "")
-      oauthParams["oauth_signature"] = signature
-
-      const authHeader = this.buildAuthHeader(oauthParams)
-
-      const response = await fetch(requestTokenUrl, {
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: authHeader,
@@ -64,173 +110,146 @@ export class TwitterAuthService {
       }
 
       const responseText = await response.text()
-      const params = new URLSearchParams(responseText)
+      const params_parsed = new URLSearchParams(responseText)
 
-      const oauthToken = params.get("oauth_token")
-      const oauthTokenSecret = params.get("oauth_token_secret")
+      const token = params_parsed.get("oauth_token")
+      const tokenSecret = params_parsed.get("oauth_token_secret")
 
-      if (!oauthToken || !oauthTokenSecret) {
-        throw new Error("Failed to get OAuth tokens from Twitter")
+      if (!token || !tokenSecret) {
+        throw new Error("Failed to get request token from Twitter")
       }
 
-      // Step 2: Build authorization URL
-      const authUrl = `https://api.twitter.com/oauth/authorize?oauth_token=${oauthToken}`
-
       return {
-        url: authUrl,
-        oauthToken,
-        oauthTokenSecret,
+        token,
+        tokenSecret,
+        authUrl: `https://api.twitter.com/oauth/authenticate?oauth_token=${token}`,
       }
     } catch (error) {
-      console.error("Error generating Twitter auth URL:", error)
-      // Return mock data for development
-      return {
-        url: "https://twitter.com/oauth/authorize?oauth_token=mock_token",
-        oauthToken: "mock_oauth_token",
-        oauthTokenSecret: "mock_oauth_token_secret",
-      }
+      console.error("Error getting Twitter request token:", error)
+      throw error
     }
   }
 
-  // Exchange OAuth verifier for access token and user info
-  async handleCallback(oauthToken: string, oauthVerifier: string, oauthTokenSecret: string): Promise<TwitterUser> {
+  async getAccessToken(
+    oauthToken: string,
+    oauthVerifier: string,
+    tokenSecret: string,
+  ): Promise<{ token: string; tokenSecret: string }> {
+    const url = "https://api.twitter.com/oauth/access_token"
+    const params = {
+      oauth_consumer_key: this.config.consumerKey,
+      oauth_nonce: this.generateNonce(),
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp: this.generateTimestamp(),
+      oauth_token: oauthToken,
+      oauth_verifier: oauthVerifier,
+      oauth_version: "1.0",
+    }
+
+    // Use the request token secret for signing
+    const tempConfig = { ...this.config, accessTokenSecret: tokenSecret }
+    const signingKey = `${this.percentEncode(tempConfig.consumerSecret)}&${this.percentEncode(tokenSecret)}`
+
+    const sortedParams = Object.keys(params)
+      .sort()
+      .map((key) => `${this.percentEncode(key)}=${this.percentEncode(params[key])}`)
+      .join("&")
+
+    const signatureBaseString = `POST&${this.percentEncode(url)}&${this.percentEncode(sortedParams)}`
+    const signature = crypto.createHmac("sha1", signingKey).update(signatureBaseString).digest("base64")
+
+    const authHeader = `OAuth oauth_consumer_key="${this.config.consumerKey}", oauth_nonce="${params.oauth_nonce}", oauth_signature="${this.percentEncode(signature)}", oauth_signature_method="HMAC-SHA1", oauth_timestamp="${params.oauth_timestamp}", oauth_token="${oauthToken}", oauth_verifier="${oauthVerifier}", oauth_version="1.0"`
+
     try {
-      // Step 1: Get access token
-      const accessTokenUrl = "https://api.twitter.com/oauth/access_token"
-      const oauthNonce = this.generateNonce()
-      const oauthTimestamp = Math.floor(Date.now() / 1000).toString()
-
-      const oauthParams = {
-        oauth_consumer_key: this.config.apiKey,
-        oauth_nonce: oauthNonce,
-        oauth_signature_method: "HMAC-SHA1",
-        oauth_timestamp: oauthTimestamp,
-        oauth_token: oauthToken,
-        oauth_version: "1.0",
-      }
-
-      const signature = this.generateSignature("POST", accessTokenUrl, oauthParams, oauthTokenSecret)
-      oauthParams["oauth_signature"] = signature
-
-      const authHeader = this.buildAuthHeader(oauthParams)
-
-      const response = await fetch(accessTokenUrl, {
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: authHeader,
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: `oauth_verifier=${oauthVerifier}`,
       })
 
       if (!response.ok) {
-        throw new Error(`Twitter access token error: ${response.status}`)
+        throw new Error(`Twitter API error: ${response.status}`)
       }
 
       const responseText = await response.text()
-      const params = new URLSearchParams(responseText)
+      const params_parsed = new URLSearchParams(responseText)
 
-      const userAccessToken = params.get("oauth_token")
-      const userAccessTokenSecret = params.get("oauth_token_secret")
-      const userId = params.get("user_id")
-      const screenName = params.get("screen_name")
+      const token = params_parsed.get("oauth_token")
+      const newTokenSecret = params_parsed.get("oauth_token_secret")
 
-      if (!userAccessToken || !userAccessTokenSecret || !userId) {
-        throw new Error("Failed to get user access tokens")
+      if (!token || !newTokenSecret) {
+        throw new Error("Failed to get access token from Twitter")
       }
 
-      // Step 2: Get user info
-      const userInfo = await this.getUserInfo(userAccessToken, userAccessTokenSecret)
-
-      return {
-        id: userId,
-        username: screenName || userInfo.username,
-        name: userInfo.name,
-        email: userInfo.email,
-        profile_image_url: userInfo.profile_image_url,
-        verified: userInfo.verified,
-      }
+      return { token, tokenSecret: newTokenSecret }
     } catch (error) {
-      console.error("Error handling Twitter callback:", error)
-      // Return mock user for development
-      return {
-        id: `twitter_${Date.now()}`,
-        username: "demo_user",
-        name: "Demo Twitter User",
-        profile_image_url: "/placeholder-user.jpg",
-        verified: false,
-      }
+      console.error("Error getting Twitter access token:", error)
+      throw error
     }
   }
 
-  // Get user information from Twitter API
-  private async getUserInfo(accessToken: string, accessTokenSecret: string): Promise<any> {
+  async getUserInfo(accessToken: string, accessTokenSecret: string): Promise<TwitterUser> {
+    const url = "https://api.twitter.com/1.1/account/verify_credentials.json"
+
+    // Create temporary config with user's tokens
+    const tempConfig = { ...this.config, accessToken, accessTokenSecret }
+    const authHeader = this.generateAuthHeaderWithTokens("GET", url, accessToken, accessTokenSecret)
+
     try {
-      const userUrl = "https://api.twitter.com/2/users/me?user.fields=profile_image_url,verified,public_metrics"
-      const oauthNonce = this.generateNonce()
-      const oauthTimestamp = Math.floor(Date.now() / 1000).toString()
-
-      const oauthParams = {
-        oauth_consumer_key: this.config.apiKey,
-        oauth_nonce: oauthNonce,
-        oauth_signature_method: "HMAC-SHA1",
-        oauth_timestamp: oauthTimestamp,
-        oauth_token: accessToken,
-        oauth_version: "1.0",
-      }
-
-      const signature = this.generateSignature("GET", userUrl, oauthParams, accessTokenSecret)
-      oauthParams["oauth_signature"] = signature
-
-      const authHeader = this.buildAuthHeader(oauthParams)
-
-      const response = await fetch(userUrl, {
+      const response = await fetch(url, {
+        method: "GET",
         headers: {
           Authorization: authHeader,
         },
       })
 
       if (!response.ok) {
-        throw new Error(`Twitter user info error: ${response.status}`)
+        throw new Error(`Twitter API error: ${response.status}`)
       }
 
-      const data = await response.json()
-      return data.data || {}
+      const userData = await response.json()
+
+      return {
+        id: userData.id_str,
+        username: userData.screen_name,
+        name: userData.name,
+        profile_image_url: userData.profile_image_url_https,
+        email: userData.email,
+      }
     } catch (error) {
       console.error("Error getting Twitter user info:", error)
-      return {}
+      throw error
     }
   }
 
-  // Generate OAuth signature
-  private generateSignature(method: string, url: string, params: any, tokenSecret = ""): string {
-    // This is a simplified implementation
-    // In production, use a proper OAuth library like 'oauth-1.0a'
-    const crypto = require("crypto")
+  private generateAuthHeaderWithTokens(
+    method: string,
+    url: string,
+    accessToken: string,
+    accessTokenSecret: string,
+  ): string {
+    const oauthParams = {
+      oauth_consumer_key: this.config.consumerKey,
+      oauth_nonce: this.generateNonce(),
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp: this.generateTimestamp(),
+      oauth_token: accessToken,
+      oauth_version: "1.0",
+    }
 
-    const sortedParams = Object.keys(params)
+    const sortedParams = Object.keys(oauthParams)
       .sort()
-      .map((key) => `${key}=${encodeURIComponent(params[key])}`)
+      .map((key) => `${this.percentEncode(key)}=${this.percentEncode(oauthParams[key])}`)
       .join("&")
 
-    const baseString = `${method}&${encodeURIComponent(url)}&${encodeURIComponent(sortedParams)}`
-    const signingKey = `${encodeURIComponent(this.config.apiKeySecret)}&${encodeURIComponent(tokenSecret)}`
+    const signatureBaseString = `${method}&${this.percentEncode(url)}&${this.percentEncode(sortedParams)}`
+    const signingKey = `${this.percentEncode(this.config.consumerSecret)}&${this.percentEncode(accessTokenSecret)}`
 
-    return crypto.createHmac("sha1", signingKey).update(baseString).digest("base64")
-  }
+    const signature = crypto.createHmac("sha1", signingKey).update(signatureBaseString).digest("base64")
 
-  // Build OAuth authorization header
-  private buildAuthHeader(params: any): string {
-    const authParams = Object.keys(params)
-      .map((key) => `${key}="${encodeURIComponent(params[key])}"`)
-      .join(", ")
-
-    return `OAuth ${authParams}`
-  }
-
-  // Generate random nonce
-  private generateNonce(): string {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+    return `OAuth oauth_consumer_key="${this.config.consumerKey}", oauth_nonce="${oauthParams.oauth_nonce}", oauth_signature="${this.percentEncode(signature)}", oauth_signature_method="HMAC-SHA1", oauth_timestamp="${oauthParams.oauth_timestamp}", oauth_token="${accessToken}", oauth_version="1.0"`
   }
 }
 
